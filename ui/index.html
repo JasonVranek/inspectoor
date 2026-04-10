@@ -1,0 +1,1831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Inspectoor — Ethereum Spec Explorer</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1c2128;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --text-dim: #6e7681;
+  --accent: #58a6ff;
+  --accent-hover: #79c0ff;
+  --green: #3fb950;
+  --red: #f85149;
+  --orange: #d29922;
+  --purple: #bc8cff;
+  --pink: #f778ba;
+  --cyan: #39d2c0;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  height: 100vh;
+  overflow: hidden;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); text-decoration: underline; }
+
+/* Layout */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  height: 52px;
+  min-height: 52px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 100;
+}
+.header .logo {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.header .logo .accent { color: var(--accent); }
+.nav-tabs {
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+}
+.nav-tab {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all 0.15s;
+}
+.nav-tab:hover { color: var(--text); background: var(--surface-2); }
+.nav-tab.active { color: var(--accent); background: rgba(88,166,255,0.1); }
+.search-box {
+  flex: 1;
+  max-width: 420px;
+  position: relative;
+  margin-left: auto;
+}
+.search-box input {
+  width: 100%;
+  padding: 6px 12px 6px 30px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.search-box input:focus { border-color: var(--accent); }
+.search-box::before {
+  content: '⌕';
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-dim);
+  font-size: 15px;
+  pointer-events: none;
+}
+.header-stats {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* Main content area */
+.main {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+}
+
+/* Three-panel layout */
+.panel-sidebar {
+  width: 240px;
+  min-width: 240px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px 0;
+}
+.panel-list {
+  flex: 1;
+  min-width: 300px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+.panel-detail {
+  flex: 2;
+  overflow-y: auto;
+  padding: 0;
+}
+
+/* Single-panel for overview */
+.panel-full {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+/* Sidebar sections */
+.sidebar-section { padding: 0 10px; margin-bottom: 14px; }
+.sidebar-section h3 {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  padding: 0 6px;
+}
+.filter-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.1s;
+}
+.filter-btn:hover { background: var(--surface-2); color: var(--text); }
+.filter-btn.active { background: rgba(88,166,255,0.1); color: var(--accent); }
+.filter-btn .count {
+  font-size: 10px;
+  color: var(--text-dim);
+  background: var(--bg);
+  padding: 0 6px;
+  border-radius: 10px;
+  min-width: 24px;
+  text-align: center;
+}
+.filter-btn.active .count { background: rgba(88,166,255,0.15); color: var(--accent); }
+
+/* List items */
+.list-header {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.1s;
+  font-size: 13px;
+}
+.list-item:hover { background: var(--surface-2); }
+.list-item.active { background: rgba(88,166,255,0.08); border-left: 2px solid var(--accent); }
+.list-item .item-name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-item .item-meta {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.badge-class { background: rgba(188,140,255,0.15); color: var(--purple); }
+.badge-def { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-dataclass { background: rgba(247,120,186,0.15); color: var(--pink); }
+.badge-enum { background: rgba(57,210,192,0.15); color: var(--cyan); }
+.badge-constant { background: rgba(210,153,34,0.15); color: var(--orange); }
+.badge-alias { background: rgba(88,166,255,0.15); color: var(--accent); }
+.badge-function { background: rgba(63,185,80,0.15); color: var(--green); }
+
+.badge-get { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-post { background: rgba(88,166,255,0.15); color: var(--accent); }
+.badge-put { background: rgba(210,153,34,0.15); color: var(--orange); }
+.badge-delete { background: rgba(248,81,73,0.15); color: var(--red); }
+
+/* Spec color badges */
+.badge-spec {
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.spec-consensus-specs { background: rgba(188,140,255,0.12); color: #c4a0ff; }
+.spec-beacon-apis { background: rgba(88,166,255,0.12); color: #7ab8ff; }
+.spec-execution-specs { background: rgba(63,185,80,0.12); color: #5dc96e; }
+.spec-execution-apis { background: rgba(57,210,192,0.12); color: #50dece; }
+.spec-builder-specs { background: rgba(247,120,186,0.12); color: #f99dcc; }
+.spec-relay-specs { background: rgba(210,153,34,0.12); color: #e0b94e; }
+.spec-remote-signing-api { background: rgba(248,81,73,0.12); color: #fa9e98; }
+
+.badge-fork {
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+.badge-fork.new { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-fork.modified { background: rgba(210,153,34,0.15); color: var(--orange); }
+
+/* Detail view */
+.detail-content { padding: 20px 24px; max-width: 900px; }
+.detail-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.detail-header h2 {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  word-break: break-all;
+}
+.detail-header .badges { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.detail-section {
+  margin-bottom: 20px;
+}
+.detail-section h3 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.detail-section .prose {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+/* Tables */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.data-table th {
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-dim);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.data-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.data-table td:first-child {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.data-table td:nth-child(2) {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.data-table tr:hover { background: var(--surface-2); }
+
+.type-link {
+  color: var(--accent);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.type-link:hover { color: var(--accent-hover); text-decoration: underline; }
+
+/* Pill groups */
+.pill-group { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* Cards (specs overview) */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+.spec-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.spec-card:hover { border-color: var(--accent); background: var(--surface-2); }
+.spec-card h3 {
+  font-size: 15px;
+  font-family: var(--font-mono);
+  margin-bottom: 10px;
+  color: var(--text);
+}
+.spec-card .stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.spec-card .stat {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.spec-card .stat strong {
+  color: var(--text);
+  font-size: 16px;
+  display: block;
+}
+
+/* Overview stats bar */
+.overview-stats {
+  display: flex;
+  gap: 24px;
+  padding: 16px 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.overview-stat { text-align: center; }
+.overview-stat .val {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--accent);
+}
+.overview-stat .label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* Loading */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  flex-direction: column;
+  gap: 16px;
+}
+.spinner {
+  width: 32px; height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Fork diff */
+.diff-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.diff-controls select {
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  outline: none;
+}
+.diff-controls select:focus { border-color: var(--accent); }
+.diff-group { margin-bottom: 20px; }
+.diff-group h3 {
+  font-size: 13px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.diff-group h3 .count-badge {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.diff-item {
+  padding: 4px 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  margin-bottom: 2px;
+}
+.diff-item:hover { background: var(--surface-2); }
+
+/* Endpoint detail */
+.method-path {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.method-path .method-badge {
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+.method-path .path {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all 0.15s;
+}
+.btn:hover { color: var(--text); border-color: var(--text-muted); }
+
+/* Empty state */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-dim);
+  font-size: 14px;
+  gap: 8px;
+}
+.empty-state .icon { font-size: 40px; opacity: 0.5; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .panel-sidebar { display: none; }
+  .panel-list { flex: 1; }
+  .panel-detail { display: none; }
+  .main.show-detail .panel-list { display: none; }
+  .main.show-detail .panel-detail { display: block; flex: 1; }
+}
+@media (max-width: 600px) {
+  .header { gap: 6px; padding: 0 8px; }
+  .nav-tabs { display: none; }
+  .header-stats { display: none; }
+  .search-box { max-width: 100%; }
+}
+
+/* JSON/Code blocks */
+.code-block {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-muted);
+  max-height: 300px;
+  overflow-y: auto;
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="header">
+    <div class="logo" onclick="navigate('#/')">🔍 The <span class="accent">Inspectoor</span></div>
+    <div class="nav-tabs" id="nav-tabs">
+      <button class="nav-tab" data-route="#/" onclick="navigate('#/')">Specs</button>
+      <button class="nav-tab" data-route="#/types" onclick="navigate('#/types')">Types</button>
+      <button class="nav-tab" data-route="#/endpoints" onclick="navigate('#/endpoints')">Endpoints</button>
+      <button class="nav-tab" data-route="#/diff" onclick="navigate('#/diff')">Diff</button>
+    </div>
+    <div class="search-box">
+      <input type="text" id="search-input" placeholder="Search types, endpoints...  (/ to focus, Esc to clear)" oninput="onSearchInput(this.value)">
+    </div>
+    <div class="header-stats" id="header-stats"></div>
+  </header>
+  <div class="main" id="main-content">
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <div>Loading catalog…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   GLOBALS
+   ══════════════════════════════════════════════════════════════ */
+let catalog = null;
+let allItems = [];
+let allEndpoints = [];
+let allConstants = [];
+let searchQuery = '';
+
+// Persistent filter state (survives item selection)
+let typeFilters = { spec: '', kind: '', domain: '' };
+let epFilters = { spec: '', method: '', domain: '' };
+
+const SPEC_COLORS = {
+  'consensus-specs': 'spec-consensus-specs',
+  'beacon-apis': 'spec-beacon-apis',
+  'execution-specs': 'spec-execution-specs',
+  'execution-apis': 'spec-execution-apis',
+  'builder-specs': 'spec-builder-specs',
+  'relay-specs': 'spec-relay-specs',
+  'remote-signing-api': 'spec-remote-signing-api'
+};
+
+const KIND_BADGES = {
+  'class': 'badge-class',
+  'def': 'badge-def',
+  'function': 'badge-function',
+  'dataclass': 'badge-dataclass',
+  'enum': 'badge-enum',
+  'constant': 'badge-constant',
+  'alias': 'badge-alias'
+};
+
+const METHOD_BADGES = {
+  'GET': 'badge-get',
+  'POST': 'badge-post',
+  'PUT': 'badge-put',
+  'DELETE': 'badge-delete'
+};
+
+/* ══════════════════════════════════════════════════════════════
+   INIT
+   ══════════════════════════════════════════════════════════════ */
+async function init() {
+  try {
+    const resp = await fetch('catalog.json');
+    catalog = await resp.json();
+    buildIndexes();
+    updateHeaderStats();
+    window.addEventListener('hashchange', route);
+    route();
+  } catch(e) {
+    document.getElementById('loading').innerHTML =
+      '<div style="color:var(--red)">Failed to load catalog.json</div><div style="color:var(--text-dim);font-size:12px">'+e.message+'</div>';
+  }
+}
+
+function buildIndexes() {
+  allItems = [];
+  allEndpoints = [];
+  allConstants = [];
+  // Items are unified at catalog.items (deduped across specs)
+  for (const [name, item] of Object.entries(catalog.items)) {
+    allItems.push({ ...item, _type: 'item' });
+  }
+  // Endpoints and constants are still per-spec
+  for (const [specName, spec] of Object.entries(catalog.specs)) {
+    if (spec.endpoints) {
+      for (const [name, ep] of Object.entries(spec.endpoints)) {
+        allEndpoints.push({ ...ep, _spec: specName, _key: name, _type: 'endpoint' });
+      }
+    }
+    if (spec.constants) {
+      for (const [name, c] of Object.entries(spec.constants)) {
+        allConstants.push({ ...c, _spec: specName, _type: 'constant' });
+      }
+    }
+  }
+}
+
+function updateHeaderStats() {
+  const totalItems = Object.keys(catalog.items).length;
+  let totalEps = 0;
+  for (const s of Object.values(catalog._meta.specs)) { totalEps += s.endpoints; }
+  document.getElementById('header-stats').textContent =
+    totalItems + ' types · ' + totalEps + ' endpoints · ' + Object.keys(catalog._meta.specs).length + ' specs';
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ROUTING
+   ══════════════════════════════════════════════════════════════ */
+function navigate(hash) {
+  window.location.hash = hash;
+}
+
+function route() {
+  const hash = window.location.hash || '#/';
+  const main = document.getElementById('main-content');
+  const hasDetail = hash.startsWith('#/type/') || hash.startsWith('#/endpoint/');
+  main.className = 'main' + (hasDetail ? ' show-detail' : '');
+
+  // Update nav tabs
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  if (hash === '#/' || hash === '#/specs' || hash === '') {
+    document.querySelector('[data-route="#/"]').classList.add('active');
+  } else if (hash.startsWith('#/type') || hash.startsWith('#/types')) {
+    document.querySelector('[data-route="#/types"]').classList.add('active');
+  } else if (hash.startsWith('#/endpoint') || hash.startsWith('#/endpoints')) {
+    document.querySelector('[data-route="#/endpoints"]').classList.add('active');
+  } else if (hash.startsWith('#/diff')) {
+    document.querySelector('[data-route="#/diff"]').classList.add('active');
+  }
+
+  // Parse route
+  if (hash === '#/' || hash === '#/specs' || hash === '') {
+    renderSpecsOverview(main);
+  } else if (hash.startsWith('#/type/')) {
+    // Type detail: render within the type browser
+    const name = decodeURIComponent(hash.replace('#/type/', '').split('?')[0]);
+    renderTypeBrowser(main, parseParams(hash), { name });
+  } else if (hash.startsWith('#/types')) {
+    renderTypeBrowser(main, parseParams(hash), null);
+  } else if (hash.startsWith('#/endpoint/')) {
+    // Endpoint detail: render within the endpoint browser
+    const parts = hash.replace('#/endpoint/', '').split('/');
+    const spec = decodeURIComponent(parts[0]);
+    const name = decodeURIComponent(parts.slice(1).join('/'));
+    renderEndpointBrowser(main, parseParams(hash), { spec, name });
+  } else if (hash.startsWith('#/endpoints')) {
+    renderEndpointBrowser(main, parseParams(hash), null);
+  } else if (hash.startsWith('#/diff')) {
+    renderDiffView(main, parseParams(hash));
+  } else {
+    renderSpecsOverview(main);
+  }
+}
+
+function parseParams(hash) {
+  const q = hash.indexOf('?');
+  if (q < 0) return {};
+  const params = {};
+  hash.substring(q+1).split('&').forEach(p => {
+    const [k,v] = p.split('=');
+    if (k && v) params[decodeURIComponent(k)] = decodeURIComponent(v);
+  });
+  return params;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FUZZY SEARCH (ported from beacon-specs-explorer)
+   ══════════════════════════════════════════════════════════════ */
+
+// Subsequence fuzzy scoring with memoization.
+// Returns a numeric score (higher = better match) or null (no match).
+// Exact substring gets highest score. Otherwise scores based on:
+// consecutive char runs, word boundary matches, early position, gap penalty.
+function fuzzyScore(target, query) {
+  if (!query) return 0;
+  const tLow = target.toLowerCase();
+  const qLow = query.toLowerCase();
+  // Exact substring: highest possible score
+  if (tLow.includes(qLow)) {
+    const pos = tLow.indexOf(qLow);
+    return 10000 - pos * 10 - tLow.length;
+  }
+  // Recursive best-match with memoization
+  const memo = {};
+  function solve(ti, qi, consecutive) {
+    if (qi === qLow.length) return 0;
+    if (ti >= tLow.length) return null;
+    const key = ti + ',' + qi + ',' + consecutive;
+    if (key in memo) return memo[key];
+    let best = null;
+    for (let i = ti; i < tLow.length; i++) {
+      if (tLow[i] !== qLow[qi]) continue;
+      let s = 1;
+      const isConsec = (i === ti && consecutive > 0);
+      const newConsec = isConsec ? consecutive + 1 : (qi === 0 ? 1 : 0);
+      if (isConsec) s += newConsec * 6;
+      if (i === 0 || tLow[i - 1] === '_' || tLow[i - 1] === '-' ||
+          (target[i] >= 'A' && target[i] <= 'Z' && target[i-1] >= 'a' && target[i-1] <= 'z'))
+        s += 5; // word boundary
+      s += Math.max(0, 10 - i);
+      const rest = solve(i + 1, qi + 1, newConsec);
+      if (rest === null) continue;
+      const total = s + rest - (i - ti) * 0.5;
+      if (best === null || total > best) best = total;
+    }
+    memo[key] = best;
+    return best;
+  }
+  const base = solve(0, 0, 0);
+  if (base === null) return null;
+  return base - tLow.length * 0.6;
+}
+
+// Wrap matched chars in <mark> for visual feedback
+function fuzzyHighlight(text, query) {
+  if (!query) return esc(text);
+  const lower = text.toLowerCase();
+  const qLow = query.toLowerCase();
+  let qi = 0, out = '';
+  for (let i = 0; i < text.length; i++) {
+    if (qi < qLow.length && lower[i] === qLow[qi]) {
+      out += '<mark style="background:rgba(88,166,255,0.25);color:inherit;padding:0;border-radius:1px">' + esc(text[i]) + '</mark>';
+      qi++;
+    } else {
+      out += esc(text[i]);
+    }
+  }
+  return out;
+}
+
+// Backward compat wrapper -- returns true/false
+function matchesSearch(name, query) {
+  if (!query) return true;
+  return fuzzyScore(name, query) !== null;
+}
+
+function onSearchInput(val) {
+  searchQuery = val;
+  const hash = window.location.hash || '#/';
+  if (hash.startsWith('#/types') || hash.startsWith('#/endpoints')) {
+    route();
+  } else if (val.length > 0) {
+    navigate('#/types');
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   KEYBOARD SHORTCUTS
+   ══════════════════════════════════════════════════════════════ */
+document.addEventListener('keydown', (e) => {
+  const searchInput = document.getElementById('search-input');
+  const isTyping = document.activeElement === searchInput;
+
+  // / to focus search (vim-style)
+  if (e.key === '/' && !isTyping) {
+    e.preventDefault();
+    searchInput.focus();
+    return;
+  }
+
+  // Escape: cycle through blur -> clear -> back
+  if (e.key === 'Escape') {
+    if (isTyping) {
+      searchInput.blur();
+    } else if (searchQuery) {
+      searchQuery = '';
+      searchInput.value = '';
+      route();
+    } else {
+      history.back();
+    }
+    return;
+  }
+
+  // Don't intercept arrows/j/k/h while typing in search
+  if (isTyping) return;
+
+  // j/k or Arrow Down/Up: navigate through list items
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'j' || e.key === 'k') {
+    e.preventDefault();
+    const rows = document.querySelectorAll('.list-item');
+    if (rows.length === 0) return;
+
+    let currentIdx = -1;
+    rows.forEach((row, i) => {
+      if (row.classList.contains('active')) currentIdx = i;
+    });
+
+    let nextIdx;
+    if (e.key === 'ArrowDown' || e.key === 'j') {
+      nextIdx = currentIdx < rows.length - 1 ? currentIdx + 1 : 0;
+    } else {
+      nextIdx = currentIdx > 0 ? currentIdx - 1 : rows.length - 1;
+    }
+
+    // Click the row to navigate
+    rows[nextIdx].click();
+    rows[nextIdx].scrollIntoView({ block: 'nearest' });
+    return;
+  }
+
+  // Enter on a selected list item: navigate to detail
+  if (e.key === 'Enter') {
+    const active = document.querySelector('.list-item.active');
+    if (active) active.click();
+    return;
+  }
+
+  // h or ArrowLeft: go back
+  if (e.key === 'h' || e.key === 'ArrowLeft') {
+    // Only go back if we're in a detail view
+    const hash = window.location.hash || '';
+    if (hash.startsWith('#/type/') || hash.startsWith('#/endpoint/')) {
+      history.back();
+    }
+    return;
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════
+   HELPERS
+   ══════════════════════════════════════════════════════════════ */
+function copyCurl(btn) {
+  const pre = btn.closest('.detail-section').querySelector('pre');
+  const text = pre.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    btn.style.color = 'var(--green)';
+    setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 1500);
+  });
+}
+
+function switchForkTab(tabId, fork, btn) {
+  // Hide all code blocks for this tab group
+  document.querySelectorAll('.fork-code-block[data-tabs="' + tabId + '"]').forEach(el => {
+    el.style.display = el.dataset.fork === fork ? '' : 'none';
+  });
+  // Update button styles
+  const parent = btn.parentElement;
+  parent.querySelectorAll('.badge-fork').forEach(b => {
+    b.style.borderColor = '';
+    b.style.color = '';
+  });
+  btn.style.borderColor = 'var(--accent)';
+  btn.style.color = 'var(--accent)';
+}
+
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function kindBadge(kind) {
+  const cls = KIND_BADGES[kind] || 'badge-class';
+  return '<span class="badge ' + cls + '">' + esc(kind) + '</span>';
+}
+
+function specBadge(spec) {
+  const cls = SPEC_COLORS[spec] || '';
+  return '<span class="badge-spec ' + cls + '">' + esc(spec) + '</span>';
+}
+
+function methodBadge(method) {
+  const cls = METHOD_BADGES[method] || 'badge-get';
+  return '<span class="badge ' + cls + '">' + esc(method) + '</span>';
+}
+
+function forkBadge(fork, cls) {
+  return '<span class="badge-fork ' + (cls||'') + '">' + esc(fork) + '</span>';
+}
+
+function resolveTypeSpec(typeName) {
+  // Items are unified -- just check catalog.items
+  const item = catalog.items && catalog.items[typeName];
+  return item ? item.spec : null;
+}
+
+function typeLink(typeName, contextSpec) {
+  if (!typeName) return '';
+  // Clean type name - strip List[], Optional[], etc.
+  const clean = typeName.replace(/^(List|Optional|Sequence|Vector|ByteList|ByteVector|Bitlist|Bitvector)\[/, '').replace(/\]$/, '').replace(/,.*/, '').trim();
+  const spec = resolveTypeSpec(clean);
+  if (spec) {
+    return '<a class="type-link" href="#/type/' + encodeURIComponent(clean) + '">' + esc(typeName) + '</a>';
+  }
+  return '<span style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted)">' + esc(typeName) + '</span>';
+}
+
+function githubBtn(url) {
+  if (!url) return '';
+  return '<a class="btn" href="' + esc(url) + '" target="_blank" rel="noopener">↗ View Source</a>';
+}
+
+/* ══════════════════════════════════════════════════════════════
+   VIEW 1: SPECS OVERVIEW
+   ══════════════════════════════════════════════════════════════ */
+function renderSpecsOverview(container) {
+  const meta = catalog._meta;
+  let totalItems = 0, totalEps = 0, totalConst = 0, totalAliases = 0;
+  for (const [k,v] of Object.entries(meta.specs)) {
+    totalItems += v.items;
+    totalEps += v.endpoints;
+    totalConst += v.constants;
+    totalAliases += v.type_aliases;
+  }
+
+  let html = '<div class="panel-full">';
+  html += '<h1 style="font-size:24px;margin-bottom:16px;font-family:var(--font-mono)">🔍 The <span style="color:var(--accent)">Inspectoor</span></h1>';
+  html += '<p style="color:var(--text-muted);margin-bottom:20px;font-size:14px">Explore all Ethereum specification types, endpoints, constants, and forks across every spec repo.</p>';
+
+  // Stats bar
+  html += '<div class="overview-stats">';
+  html += '<div class="overview-stat"><div class="val">' + Object.keys(meta.specs).length + '</div><div class="label">Specs</div></div>';
+  html += '<div class="overview-stat"><div class="val">' + totalItems + '</div><div class="label">Types</div></div>';
+  html += '<div class="overview-stat"><div class="val">' + totalEps + '</div><div class="label">Endpoints</div></div>';
+  html += '<div class="overview-stat"><div class="val">' + totalConst + '</div><div class="label">Constants</div></div>';
+  html += '<div class="overview-stat"><div class="val">' + totalAliases + '</div><div class="label">Type Aliases</div></div>';
+  html += '</div>';
+
+  // Cards
+  html += '<div class="cards-grid">';
+  for (const [specName, specData] of Object.entries(catalog.specs)) {
+    const m = specData.meta || {};
+    const sm = catalog._meta.specs[specName] || {};
+    const forkCount = (m.fork_order || []).length;
+    html += '<div class="spec-card" onclick="navigate(\'#/types?spec=' + encodeURIComponent(specName) + '\')">';
+    html += '<h3>' + specBadge(specName) + ' ' + esc(specName) + '</h3>';
+    html += '<div class="stats">';
+    html += '<div class="stat"><strong>' + (sm.items || 0) + '</strong>Types</div>';
+    html += '<div class="stat"><strong>' + (sm.endpoints || 0) + '</strong>Endpoints</div>';
+    html += '<div class="stat"><strong>' + (sm.constants || 0) + '</strong>Constants</div>';
+    html += '<div class="stat"><strong>' + forkCount + '</strong>Forks</div>';
+    html += '</div>';
+    if (m.fork_order && m.fork_order.length) {
+      html += '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:3px">';
+      m.fork_order.forEach(f => { html += forkBadge(f); });
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  html += '</div></div>';
+  container.innerHTML = html;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   VIEW 2: TYPE BROWSER
+   ══════════════════════════════════════════════════════════════ */
+function setTypeFilter(key, value) {
+  typeFilters[key] = value;
+  // Re-render in place (keep current selection if any)
+  route();
+}
+
+function renderTypeBrowser(container, params, selected) {
+  // Apply URL params to filters only when first entering types view (not from detail nav)
+  if (params.spec !== undefined && !selected) {
+    if (params.spec) typeFilters.spec = params.spec;
+    if (params.kind) typeFilters.kind = params.kind;
+    if (params.domain) typeFilters.domain = params.domain;
+  }
+
+  const { spec: filterSpec, kind: filterKind, domain: filterDomain } = typeFilters;
+
+  // Collect filter facets
+  const specs = {}, kinds = {}, domains = {};
+  allItems.forEach(item => {
+    // Count in each spec this item belongs to
+    if (item.specs) item.specs.forEach(s => { specs[s] = (specs[s]||0) + 1; });
+    if (item.kind) kinds[item.kind] = (kinds[item.kind]||0) + 1;
+    if (item.domain) domains[item.domain] = (domains[item.domain]||0) + 1;
+  });
+
+  // Filter
+  let filtered = allItems.filter(item => {
+    if (filterSpec && (!item.specs || !item.specs.includes(filterSpec))) return false;
+    if (filterKind && item.kind !== filterKind) return false;
+    if (filterDomain && item.domain !== filterDomain) return false;
+    if (searchQuery && fuzzyScore(item.name, searchQuery) === null) return false;
+    return true;
+  });
+
+  if (searchQuery) {
+    filtered.sort((a, b) => fuzzyScore(b.name, searchQuery) - fuzzyScore(a.name, searchQuery));
+  } else {
+    filtered.sort((a,b) => a.name.localeCompare(b.name));
+  }
+
+  // Sidebar
+  let sideHtml = '';
+  sideHtml += '<div class="sidebar-section"><h3>Specs</h3>';
+  sideHtml += typeFilterBtn('spec', '', 'All specs', allItems.length, filterSpec === '');
+  for (const [s, c] of Object.entries(specs).sort((a,b)=>b[1]-a[1])) {
+    sideHtml += typeFilterBtn('spec', s, s, c, filterSpec === s);
+  }
+  sideHtml += '</div>';
+  sideHtml += '<div class="sidebar-section"><h3>Kind</h3>';
+  sideHtml += typeFilterBtn('kind', '', 'All kinds', '', filterKind === '');
+  for (const [k, c] of Object.entries(kinds).sort((a,b)=>b[1]-a[1])) {
+    sideHtml += typeFilterBtn('kind', k, k, c, filterKind === k);
+  }
+  sideHtml += '</div>';
+  sideHtml += '<div class="sidebar-section"><h3>Domain</h3>';
+  sideHtml += typeFilterBtn('domain', '', 'All domains', '', filterDomain === '');
+  for (const [d, c] of Object.entries(domains).sort((a,b)=>b[1]-a[1])) {
+    sideHtml += typeFilterBtn('domain', d, d, c, filterDomain === d);
+  }
+  sideHtml += '</div>';
+
+  // List
+  const selName = selected ? selected.name : null;
+  let listHtml = '<div class="list-header"><span>' + filtered.length + ' types</span></div>';
+  const renderCount = Math.min(filtered.length, 500);
+  for (let i = 0; i < renderCount; i++) {
+    const item = filtered[i];
+    const isActive = (item.name === selName);
+    listHtml += '<div class="list-item' + (isActive ? ' active' : '') + '" onclick="navigate(\'#/type/' +
+      encodeURIComponent(item.name) + '\')">' +
+      '<span class="item-name">' + (searchQuery ? fuzzyHighlight(item.name, searchQuery) : esc(item.name)) + '</span>' +
+      '<span class="item-meta">' + kindBadge(item.kind) + specBadge(item.spec) +
+      (item.specs && item.specs.length > 1 ? '<span style="font-size:9px;color:var(--text-dim)">+' + (item.specs.length-1) + '</span>' : '') +
+      '</span></div>';
+  }
+  if (filtered.length > renderCount) {
+    listHtml += '<div style="padding:12px;color:var(--text-dim);font-size:12px;text-align:center">… and ' + (filtered.length - renderCount) + ' more. Use search to narrow.</div>';
+  }
+
+  // Detail
+  let detailHtml = selected
+    ? renderTypeDetailContent(null, selected.name)
+    : '<div class="empty-state"><div class="icon">📋</div><div>Select a type to view details</div></div>';
+
+  container.innerHTML =
+    '<div class="panel-sidebar">' + sideHtml + '</div>' +
+    '<div class="panel-list">' + listHtml + '</div>' +
+    '<div class="panel-detail">' + detailHtml + '</div>';
+
+  if (selected) {
+    const activeRow = container.querySelector('.list-item.active');
+    if (activeRow) activeRow.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function typeFilterBtn(key, value, label, count, active) {
+  return '<button class="filter-btn' + (active ? ' active' : '') + '" onclick="setTypeFilter(\'' + key + '\', \'' + esc(value) + '\')">' +
+    '<span>' + esc(label) + '</span>' +
+    (count ? '<span class="count">' + count + '</span>' : '') +
+    '</button>';
+}
+
+
+
+/* ══════════════════════════════════════════════════════════════
+   VIEW 3: TYPE DETAIL
+   ══════════════════════════════════════════════════════════════ */
+function getCodeForFork(item, fork) {
+  // Walk backward from this fork to find the last fork with code (dedup strategy)
+  const forks = Object.keys(item.forks);
+  const idx = forks.indexOf(fork);
+  for (let i = idx; i >= 0; i--) {
+    if (item.forks[forks[i]].code) return item.forks[forks[i]].code;
+  }
+  return '';
+}
+
+function highlightPython(code) {
+  if (!code) return '';
+  const KW = /\b(class|def|return|if|else|elif|for|while|in|not|and|or|is|assert|raise|import|from|as|with|yield|pass|break|continue|try|except|finally|True|False|None|lambda)\b/g;
+  return code.split('\n').map(line => {
+    let escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // Find comment
+    let inStr = null, commentIdx = -1;
+    for (let i = 0; i < escaped.length; i++) {
+      const ch = escaped[i];
+      if (inStr) { if (ch === '\\') { i++; continue; } if (ch === inStr) inStr = null; }
+      else { if (ch === '"' || ch === "'") inStr = ch; else if (ch === '#') { commentIdx = i; break; } }
+    }
+    let codePart, commentPart;
+    if (commentIdx >= 0) {
+      codePart = escaped.slice(0, commentIdx);
+      const raw = escaped.slice(commentIdx);
+      commentPart = '<span style="color:var(--text-dim)">' +
+        raw.replace(/(\[New in [^\]]+\])/g, '<span style="color:var(--green)">$1</span>')
+           .replace(/(\[Modified in [^\]]+\])/g, '<span style="color:var(--orange)">$1</span>') +
+        '</span>';
+    } else {
+      codePart = escaped;
+      commentPart = '';
+    }
+    // Keywords in code part
+    function linkifyCode(seg) {
+      let result = seg.replace(KW, '<span style="color:var(--pink)">$1</span>');
+      // Linkify known types
+      if (catalog) {
+        const parts = result.split(/(<span[^>]*>.*?<\/span>)/g);
+        result = parts.map(part => {
+          if (part.startsWith('<span')) return part;
+          return part.replace(/\b([A-Z][A-Za-z0-9_]*)\b/g, (match) => {
+            const s = resolveTypeSpec(match);
+            if (s) return '<a class="type-link" href="#/type/' + encodeURIComponent(match) + '">' + match + '</a>';
+            return match;
+          });
+        }).join('');
+      }
+      return result;
+    }
+    // Handle strings
+    const strRe = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g;
+    let processed = '', lastIdx = 0, m;
+    while ((m = strRe.exec(codePart)) !== null) {
+      processed += linkifyCode(codePart.slice(lastIdx, m.index));
+      processed += '<span style="color:var(--orange)">' + m[0] + '</span>';
+      lastIdx = m.index + m[0].length;
+    }
+    processed += linkifyCode(codePart.slice(lastIdx));
+    // Decorators
+    processed = processed.replace(/^(\s*)(@\w+)/, '$1<span style="color:var(--cyan)">$2</span>');
+    return processed + commentPart;
+  }).join('\n');
+}
+
+function renderTypeDetailContent(selectedSpec, name) {
+  // Items are unified in catalog.items (already merged across specs)
+  const item = catalog.items[name];
+  if (!item) {
+    return '<div class="empty-state"><div class="icon">❓</div><div>Type not found: ' + esc(name) + '</div></div>';
+  }
+  const spec = item.spec;
+  const forkNames = Object.keys(item.forks);
+  const latestFork = forkNames[forkNames.length - 1];
+
+  let html = '<div class="detail-content">';
+
+  // Header
+  html += '<div class="detail-header">';
+  html += '<h2>' + esc(item.name) + '</h2>';
+  html += '<div class="badges">';
+  html += kindBadge(item.kind);
+  // Show all specs this type appears in
+  if (item.specs) item.specs.forEach(s => { html += specBadge(s); });
+  if (item.domain) html += '<span class="badge-spec">' + esc(item.domain) + '</span>';
+  if (item.introduced) html += forkBadge(item.introduced, 'new');
+  html += '</div></div>';
+
+  // GitHub + EIPs row
+  const latestData = item.forks[latestFork] || {};
+  html += '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">';
+  html += githubBtn(latestData.github_url);
+  if (latestData.eips && latestData.eips.length) {
+    latestData.eips.forEach(eip => {
+      const num = String(eip).replace(/^eip-?/i, '');
+      html += '<a href="https://eips.ethereum.org/EIPS/eip-' + num + '" target="_blank" rel="noopener" class="badge" style="background:rgba(88,166,255,0.1);color:var(--accent)">EIP-' + esc(num) + '</a>';
+    });
+  }
+  html += '</div>';
+
+  // Fork code tabs (shown first -- the main content) -- use item (may be from a different spec if this spec has no code)
+  const codeForkNames = Object.keys(item.forks);
+  const hasCode = codeForkNames.some(f => getCodeForFork(item, f));
+
+  if (hasCode && codeForkNames.length > 0) {
+    const tabId = 'fork-tabs-' + name.replace(/[^a-zA-Z0-9]/g, '_');
+    html += '<div class="detail-section"><h3>Definition' +
+      '' +
+      '</h3>';
+
+    // Fork tab pills
+    html += '<div class="pill-group" style="margin-bottom:8px">';
+    codeForkNames.forEach((f, i) => {
+      let cls = '';
+      const fd = item.forks[f];
+      if (fd.is_new) cls = 'new';
+      else if (fd.is_modified) cls = 'modified';
+      const isLast = i === codeForkNames.length - 1;
+      html += '<button class="badge-fork ' + cls + '" style="cursor:pointer;' + (isLast ? 'border-color:var(--accent);color:var(--accent)' : '') + '" onclick="switchForkTab(\'' + esc(tabId) + '\', \'' + esc(f) + '\', this)">' + esc(f) + '</button>';
+    });
+    html += '</div>';
+
+    // Code blocks (one per fork, latest visible initially)
+    codeForkNames.forEach((f, i) => {
+      const code = getCodeForFork(item, f);
+      const fd = item.forks[f];
+      const isLast = i === codeForkNames.length - 1;
+      html += '<div class="fork-code-block" data-tabs="' + esc(tabId) + '" data-fork="' + esc(f) + '" style="' + (isLast ? '' : 'display:none') + '">';
+
+      // Fields for this fork (if available and it's a class/dataclass)
+      const forkFields = fd.fields || (item.forks[f] ? item.forks[f].fields : null);
+      if (forkFields && forkFields.length) {
+        html += '<table class="data-table" style="margin-bottom:12px"><thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead><tbody>';
+        forkFields.forEach(field => {
+          html += '<tr><td>' + esc(field.name) + '</td><td>' + typeLink(field.type, spec) + '</td><td style="font-family:var(--font-sans);font-size:12px;color:var(--text-muted)">' + esc(field.description || '') + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+
+      if (code) {
+        html += '<pre class="code-block" style="max-height:600px">' + highlightPython(code) + '</pre>';
+      } else if (!forkFields || !forkFields.length) {
+        html += '<div style="padding:12px;color:var(--text-dim);font-size:12px">No definition in this fork.</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+  } else if (latestData.fields && latestData.fields.length) {
+    // No code anywhere -- show fields table + pseudo-definition
+    html += '<div class="detail-section"><h3>Definition <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-dim)">(from schema)</span></h3>';
+    html += '<table class="data-table" style="margin-bottom:12px"><thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead><tbody>';
+    latestData.fields.forEach(f => {
+      html += '<tr><td>' + esc(f.name) + '</td><td>' + typeLink(f.type, spec) + '</td><td style="font-family:var(--font-sans);font-size:12px;color:var(--text-muted)">' + esc(f.description || '') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    let pseudo = 'class ' + name + '(Container):\n';
+    latestData.fields.forEach(f => {
+      pseudo += '    ' + f.name + ': ' + (f.type || 'unknown');
+      if (f.description) pseudo += '  # ' + f.description;
+      pseudo += '\n';
+    });
+    html += '<pre class="code-block">' + highlightPython(pseudo) + '</pre>';
+    html += '</div>';
+  }
+
+  // Prose/description (after code so it doesn't push code below the fold)
+  if (latestData.prose) {
+    html += '<div class="detail-section"><h3>Description</h3><div class="prose" style="border-left:3px solid var(--cyan);padding-left:12px;font-size:13px;color:var(--text-muted);line-height:1.7;white-space:pre-wrap">' + esc(latestData.prose) + '</div></div>';
+  }
+
+  // Params + return (for functions, shown after definition)
+  if (latestData.params && latestData.params.length) {
+    html += '<div class="detail-section"><h3>Parameters</h3>';
+    html += '<table class="data-table"><thead><tr><th>Name</th><th>Type</th></tr></thead><tbody>';
+    latestData.params.forEach(p => {
+      const pName = typeof p === 'string' ? p : (p.name || p);
+      const pType = typeof p === 'object' ? (p.type || '') : '';
+      html += '<tr><td>' + esc(pName) + '</td><td>' + typeLink(pType, spec) + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  if (latestData.return_type) {
+    html += '<div class="detail-section"><h3>Returns</h3><div>' + typeLink(latestData.return_type, spec) + '</div></div>';
+  }
+
+  // References
+  if (latestData.references && latestData.references.length) {
+    html += '<div class="detail-section"><h3>References</h3>';
+    html += '<div class="pill-group">';
+    latestData.references.forEach(ref => { html += typeLink(ref, spec) + ' '; });
+    html += '</div></div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   VIEW 4: ENDPOINT BROWSER
+   ══════════════════════════════════════════════════════════════ */
+function setEpFilter(key, value) {
+  epFilters[key] = value;
+  route();
+}
+
+function renderEndpointBrowser(container, params, selected) {
+  if (params.spec !== undefined && !selected) {
+    if (params.spec) epFilters.spec = params.spec;
+    if (params.method) epFilters.method = params.method;
+    if (params.domain) epFilters.domain = params.domain;
+  }
+  const filterSpec = epFilters.spec;
+  const filterMethod = epFilters.method;
+  const filterDomain = epFilters.domain;
+
+  // Facets
+  const specs = {}, methods = {}, domains = {};
+  allEndpoints.forEach(ep => {
+    specs[ep._spec] = (specs[ep._spec]||0) + 1;
+    if (ep.method) methods[ep.method] = (methods[ep.method]||0) + 1;
+    if (ep.domain) domains[ep.domain] = (domains[ep.domain]||0) + 1;
+  });
+
+  let filtered = allEndpoints.filter(ep => {
+    if (filterSpec && ep._spec !== filterSpec) return false;
+    if (filterMethod && ep.method !== filterMethod) return false;
+    if (filterDomain && ep.domain !== filterDomain) return false;
+    if (searchQuery) {
+      const pathMatch = fuzzyScore(ep.path, searchQuery);
+      const sumMatch = ep.summary ? fuzzyScore(ep.summary, searchQuery) : null;
+      const opMatch = ep.operation_id ? fuzzyScore(ep.operation_id, searchQuery) : null;
+      if (pathMatch === null && sumMatch === null && opMatch === null) return false;
+    }
+    return true;
+  });
+
+  if (searchQuery) {
+    filtered.sort((a, b) => {
+      const sa = Math.max(fuzzyScore(a.path, searchQuery) || -999, fuzzyScore(a.summary||'', searchQuery) || -999);
+      const sb = Math.max(fuzzyScore(b.path, searchQuery) || -999, fuzzyScore(b.summary||'', searchQuery) || -999);
+      return sb - sa;
+    });
+  } else {
+    filtered.sort((a,b) => a.path.localeCompare(b.path));
+  }
+
+  // Sidebar
+  let sideHtml = '<div class="sidebar-section"><h3>Specs</h3>';
+  sideHtml += epFilterBtn('', 'All specs', allEndpoints.length, filterSpec === '', 'spec');
+  for (const [s,c] of Object.entries(specs).sort((a,b)=>b[1]-a[1])) {
+    sideHtml += epFilterBtn(s, s, c, filterSpec === s, 'spec');
+  }
+  sideHtml += '</div>';
+
+  sideHtml += '<div class="sidebar-section"><h3>Method</h3>';
+  sideHtml += epFilterBtn('', 'All', '', filterMethod === '', 'method');
+  for (const [m,c] of Object.entries(methods).sort()) {
+    sideHtml += epFilterBtn(m, m, c, filterMethod === m, 'method');
+  }
+  sideHtml += '</div>';
+
+  if (Object.keys(domains).length > 1) {
+    sideHtml += '<div class="sidebar-section"><h3>Domain</h3>';
+    sideHtml += epFilterBtn('', 'All', '', filterDomain === '', 'domain');
+    for (const [d,c] of Object.entries(domains).sort((a,b)=>b[1]-a[1])) {
+      if (d) sideHtml += epFilterBtn(d, d, c, filterDomain === d, 'domain');
+    }
+    sideHtml += '</div>';
+  }
+
+  // Build list with active state
+  const selName = selected ? selected.name : null;
+  const selSpec = selected ? selected.spec : null;
+  let listHtml = '<div class="list-header"><span>' + filtered.length + ' endpoints</span></div>';
+  const renderCount = Math.min(filtered.length, 300);
+  for (let i = 0; i < renderCount; i++) {
+    const ep = filtered[i];
+    const isActive = (ep._key === selName && ep._spec === selSpec);
+    listHtml += '<div class="list-item' + (isActive ? ' active' : '') + '" onclick="navigate(\'#/endpoint/' +
+      encodeURIComponent(ep._spec) + '/' + encodeURIComponent(ep._key) + '\')" style="gap:6px">' +
+      methodBadge(ep.method) +
+      '<span class="item-name" style="flex:none;max-width:250px">' + (searchQuery ? fuzzyHighlight(ep.path, searchQuery) : esc(ep.path)) + '</span>' +
+      '<span style="font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + esc(ep.summary || '') + '</span>' +
+      specBadge(ep._spec) +
+      '</div>';
+  }
+
+  // Build detail panel
+  let detailHtml;
+  if (selected) {
+    detailHtml = renderEndpointDetailContent(selected.spec, selected.name);
+  } else {
+    detailHtml = '<div class="empty-state"><div class="icon">🔌</div><div>Select an endpoint to view details</div></div>';
+  }
+
+  container.innerHTML =
+    '<div class="panel-sidebar">' + sideHtml + '</div>' +
+    '<div class="panel-list">' + listHtml + '</div>' +
+    '<div class="panel-detail">' + detailHtml + '</div>';
+
+  if (selected) {
+    const activeRow = container.querySelector('.list-item.active');
+    if (activeRow) activeRow.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function epFilterBtn(value, label, count, active, filterType) {
+  return '<button class="filter-btn' + (active ? ' active' : '') + '" onclick="setEpFilter(\'' + filterType + '\', \'' + esc(value) + '\')">' +
+    '<span>' + esc(label) + '</span>' +
+    (count ? '<span class="count">' + count + '</span>' : '') +
+    '</button>';
+}
+
+/* ══════════════════════════════════════════════════════════════
+   VIEW 5: ENDPOINT DETAIL
+   ══════════════════════════════════════════════════════════════ */
+
+const curlPathDefaults = {
+  'block_id': 'head',
+  'state_id': 'head',
+  'slot': '1',
+  'epoch': '1',
+  'pubkey': '0x93247f2209abcacf57b75a51dafae777f9dd38bc7053d1af526f220a7489a6d3a2753e5f3e8b1cfe39b56f43611df74a',
+  'parent_hash': '0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2',
+  'peer_id': '16Uiu2HAmEmBCWbHcqLJkYbS7MsrMNhpvMXsNGYJCkCRnBGPk9dQp',
+  'validator_id': '0',
+  'committee_index': '0',
+  'sync_committee_index': '0',
+  'blob_id': '0',
+  'block_root': '0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2',
+};
+
+const specPorts = {
+  'beacon-apis': 5052,
+  'builder-specs': 18550,
+  'relay-specs': 18550,
+  'remote-signing-api': 9000,
+};
+
+function buildCurlFromInputs(ep, spec, mode) {
+  const port = specPorts[spec] || 5052;
+  const base = 'http://localhost:' + port;
+  const parts = ['curl'];
+
+  if (ep.method !== 'GET') parts.push('-X ' + ep.method);
+
+  let path = ep.path;
+  const inputs = mode ? document.querySelectorAll('.curl-input') : [];
+  const pathVals = {};
+  const queryVals = {};
+  inputs.forEach(function(inp) {
+    if (inp.dataset.in === 'path') pathVals[inp.dataset.param] = inp.value;
+    else if (inp.dataset.in === 'query' && inp.value) queryVals[inp.dataset.param] = inp.value;
+  });
+
+  path = path.replace(/\{([^}]+)\}/g, (match, name) => {
+    return pathVals[name] || curlPathDefaults[name] || '<' + name + '>';
+  });
+
+  let url = base + path;
+
+  // Query string
+  const qs = Object.entries(queryVals).map(([k,v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('&');
+  if (qs) url += '?' + qs;
+
+  parts.push("'" + url + "'");
+
+  // Headers
+  if (ep.method === 'POST' || ep.method === 'PUT') {
+    parts.push("-H 'Content-Type: application/json'");
+  }
+  const cn = ep.content_negotiation;
+  if (cn && cn.ssz_support) {
+    parts.push("-H 'Accept: application/json'");
+  }
+
+  // Body
+  if (ep.request_body) {
+    parts.push("-d '{...}'");
+  }
+
+  let cmd = parts.join(' \\\n  ');
+
+  if (cn && cn.ssz_support) {
+    cmd += '\n\n# For SSZ: -H \'Accept: application/octet-stream\'';
+  }
+
+  return cmd;
+}
+
+var _pendingCurlEp = null;
+
+function rebuildCurl() {
+  if (!_pendingCurlEp) return;
+  var cmd = buildCurlFromInputs(_pendingCurlEp, _pendingCurlEp.spec, 'live');
+  var output = document.getElementById('curl-output');
+  if (output) output.textContent = cmd;
+}
+
+// Event delegation: any input inside the curl section triggers a rebuild
+document.addEventListener('input', function(e) {
+  if (e.target.classList.contains('curl-input')) {
+    rebuildCurl();
+  }
+});
+
+function renderEndpointDetailContent(spec, key) {
+  const specData = catalog.specs[spec];
+  if (!specData || !specData.endpoints || !specData.endpoints[key]) {
+    return '<div class="empty-state"><div class="icon">❓</div><div>Endpoint not found: ' + esc(key) + '</div></div>';
+  }
+  const ep = specData.endpoints[key];
+
+  let html = '<div class="detail-content">';
+
+  // Method + Path
+  html += '<div class="method-path">';
+  html += '<span class="method-badge ' + (METHOD_BADGES[ep.method]||'') + '">' + esc(ep.method) + '</span>';
+  html += '<span class="path">' + esc(ep.path) + '</span>';
+  html += '</div>';
+
+  // Badges
+  html += '<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">';
+  html += specBadge(spec);
+  if (ep.domain) html += '<span class="badge-spec">' + esc(ep.domain) + '</span>';
+  if (ep.operation_id) html += '<span class="badge-spec">' + esc(ep.operation_id) + '</span>';
+  if (ep.tags) ep.tags.forEach(t => { html += '<span class="badge-fork">' + esc(t) + '</span>'; });
+  html += '</div>';
+
+  html += '<div style="margin-bottom:16px;display:flex;gap:8px">' + githubBtn(ep.github_url) + '</div>';
+
+  // Interactive curl builder
+  if (ep.path && ep.path.startsWith('/')) {
+    const allParams = ep.parameters || [];
+    const pathParams = allParams.filter(p => p.in === 'path');
+    const queryParams = allParams.filter(p => p.in === 'query');
+
+    html += '<div class="detail-section" id="curl-section"><h3>Try It <button onclick="copyCurl(this)" style="float:right;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;color:var(--text-muted);font-size:11px;padding:2px 8px;cursor:pointer;font-family:var(--font-sans)">Copy</button></h3>';
+
+    if (pathParams.length > 0 || queryParams.length > 0) {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">';
+      pathParams.forEach(function(p) {
+        var def = curlPathDefaults[p.name] || '';
+        html += '<label style="font-size:11px;color:var(--text-muted);display:flex;flex-direction:column;gap:2px">';
+        html += '<span>' + esc(p.name) + ' <span style="color:var(--orange)">path</span></span>';
+        html += '<input type="text" class="curl-input" data-param="' + esc(p.name) + '" data-in="path" value="' + esc(def) + '" style="padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;width:180px">';
+        html += '</label>';
+      });
+      queryParams.forEach(function(p) {
+        html += '<label style="font-size:11px;color:var(--text-muted);display:flex;flex-direction:column;gap:2px">';
+        html += '<span>' + esc(p.name) + (p.type === 'array' ? ' <span style="color:var(--text-dim)">csv</span>' : '') + '</span>';
+        html += '<input type="text" class="curl-input" data-param="' + esc(p.name) + '" data-in="query" placeholder="' + esc((p.description || '').slice(0, 50)) + '" style="padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;width:180px">';
+        html += '</label>';
+      });
+      html += '</div>';
+    }
+
+    var initCmd = buildCurlFromInputs(ep, spec, null);
+    html += '<pre class="code-block" id="curl-output">' + esc(initCmd) + '</pre>';
+    html += '</div>';
+
+    // Store current endpoint data for live updates (set after innerHTML)
+    _pendingCurlEp = { method: ep.method, path: ep.path, spec: spec, content_negotiation: ep.content_negotiation || null, request_body: !!(ep.request_body && (ep.method === 'POST' || ep.method === 'PUT')) };
+  }
+
+  // Summary / Description
+  if (ep.summary) {
+    html += '<div class="detail-section"><h3>Summary</h3><div class="prose">' + esc(ep.summary) + '</div></div>';
+  }
+  if (ep.description && ep.description !== ep.summary) {
+    html += '<div class="detail-section"><h3>Description</h3><div class="prose">' + esc(ep.description) + '</div></div>';
+  }
+
+  // Parameters
+  if (ep.parameters && ep.parameters.length) {
+    html += '<div class="detail-section"><h3>Parameters (' + ep.parameters.length + ')</h3>';
+    html += '<table class="data-table"><thead><tr><th>Name</th><th>In</th><th>Type</th><th>Required</th><th>Description</th></tr></thead><tbody>';
+    ep.parameters.forEach(p => {
+      html += '<tr><td>' + esc(p.name) + '</td><td>' + esc(p.in || '') + '</td><td>' +
+        esc(p.schema && p.schema.type ? p.schema.type : (p.type || '')) + '</td><td>' +
+        (p.required ? '✓' : '') + '</td><td style="font-family:var(--font-sans);font-size:12px;color:var(--text-muted)">' +
+        esc(p.description || '') + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  // Request body
+  if (ep.request_body) {
+    html += '<div class="detail-section"><h3>Request Body</h3>';
+    html += '<div class="code-block">' + esc(JSON.stringify(ep.request_body, null, 2)) + '</div>';
+    html += '</div>';
+  }
+
+  // Responses
+  if (ep.responses) {
+    html += '<div class="detail-section"><h3>Responses</h3>';
+    for (const [code, resp] of Object.entries(ep.responses)) {
+      html += '<div style="margin-bottom:8px"><span class="badge ' +
+        (code.startsWith('2') ? 'badge-get' : code.startsWith('4') ? 'badge-delete' : 'badge-put') +
+        '">' + esc(code) + '</span> ';
+      if (typeof resp === 'string') {
+        html += '<span style="color:var(--text-muted);font-size:12px">' + esc(resp) + '</span>';
+      } else {
+        html += '<span style="color:var(--text-muted);font-size:12px">' + esc(resp.description || '') + '</span>';
+        if (resp.content || resp.schema) {
+          html += '<div class="code-block" style="margin-top:4px">' + esc(JSON.stringify(resp.content || resp.schema, null, 2)) + '</div>';
+        }
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  // Result (JSON-RPC)
+  if (ep.result) {
+    html += '<div class="detail-section"><h3>Result</h3>';
+    html += '<div class="code-block">' + esc(JSON.stringify(ep.result, null, 2)) + '</div>';
+    html += '</div>';
+  }
+
+  // Errors
+  if (ep.errors && ep.errors.length) {
+    html += '<div class="detail-section"><h3>Errors</h3>';
+    html += '<table class="data-table"><thead><tr><th>Code</th><th>Message</th></tr></thead><tbody>';
+    ep.errors.forEach(e => {
+      html += '<tr><td>' + esc(String(e.code || '')) + '</td><td style="font-family:var(--font-sans)">' + esc(e.message || JSON.stringify(e)) + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  // Fork versioning
+  if (ep.fork_versioned || ep.fork_variants) {
+    html += '<div class="detail-section"><h3>Fork Versioning</h3>';
+    if (ep.fork_versioned) html += '<div style="font-size:12px;color:var(--text-muted)">Fork versioned: ' + esc(String(ep.fork_versioned)) + '</div>';
+    if (ep.fork_variants) {
+      html += '<div class="code-block" style="margin-top:4px">' + esc(JSON.stringify(ep.fork_variants, null, 2)) + '</div>';
+    }
+    html += '</div>';
+  }
+
+  // External docs
+  if (ep.external_docs) {
+    html += '<div class="detail-section"><h3>External Docs</h3>';
+    if (typeof ep.external_docs === 'string') {
+      html += '<a href="' + esc(ep.external_docs) + '" target="_blank">' + esc(ep.external_docs) + '</a>';
+    } else {
+      html += '<a href="' + esc(ep.external_docs.url || '') + '" target="_blank">' + esc(ep.external_docs.description || ep.external_docs.url || '') + '</a>';
+    }
+    html += '</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   VIEW 6: FORK DIFF
+   ══════════════════════════════════════════════════════════════ */
+function renderDiffView(container, params) {
+  const specName = params.spec || Object.keys(catalog.specs)[0];
+  const specData = catalog.specs[specName];
+  const forkOrder = (specData && specData.meta && specData.meta.fork_order) || [];
+  const fromFork = params.from || (forkOrder.length > 1 ? forkOrder[forkOrder.length - 2] : forkOrder[0] || '');
+  const toFork = params.to || forkOrder[forkOrder.length - 1] || '';
+
+  let html = '<div class="panel-full">';
+  html += '<h2 style="font-size:18px;margin-bottom:16px;font-family:var(--font-mono)">Fork Diff</h2>';
+
+  // Controls
+  html += '<div class="diff-controls">';
+  html += '<label style="font-size:12px;color:var(--text-muted)">Spec:</label>';
+  html += '<select onchange="navigateDiff(this.value, null, null)">';
+  for (const s of Object.keys(catalog.specs)) {
+    html += '<option value="' + esc(s) + '"' + (s === specName ? ' selected' : '') + '>' + esc(s) + '</option>';
+  }
+  html += '</select>';
+
+  html += '<label style="font-size:12px;color:var(--text-muted)">From:</label>';
+  html += '<select onchange="navigateDiff(null, this.value, null)" id="diff-from">';
+  forkOrder.forEach(f => {
+    html += '<option value="' + esc(f) + '"' + (f === fromFork ? ' selected' : '') + '>' + esc(f) + '</option>';
+  });
+  html += '</select>';
+
+  html += '<span style="color:var(--text-dim)">→</span>';
+
+  html += '<label style="font-size:12px;color:var(--text-muted)">To:</label>';
+  html += '<select onchange="navigateDiff(null, null, this.value)" id="diff-to">';
+  forkOrder.forEach(f => {
+    html += '<option value="' + esc(f) + '"' + (f === toFork ? ' selected' : '') + '>' + esc(f) + '</option>';
+  });
+  html += '</select>';
+  html += '</div>';
+
+  // Compute diff
+  const forkSummary = specData && specData.fork_summary;
+  if (forkSummary && forkSummary[toFork]) {
+    const fs = forkSummary[toFork];
+    const newItems = fs.new || [];
+    const modifiedItems = fs.modified || [];
+    const newMethods = fs.new_methods || [];
+
+    if (newItems.length) {
+      html += '<div class="diff-group">';
+      html += '<h3 style="color:var(--green)">✚ New in ' + esc(toFork) + ' <span class="count-badge" style="background:rgba(63,185,80,0.15);color:var(--green)">' + newItems.length + '</span></h3>';
+      newItems.forEach(name => {
+        html += '<div class="diff-item" onclick="navigate(\'#/type/' + encodeURIComponent(name) + '\')" style="color:var(--green)">' +
+          '+ ' + esc(name) + '</div>';
+      });
+      html += '</div>';
+    }
+
+    if (modifiedItems.length) {
+      html += '<div class="diff-group">';
+      html += '<h3 style="color:var(--orange)">✎ Modified in ' + esc(toFork) + ' <span class="count-badge" style="background:rgba(210,153,34,0.15);color:var(--orange)">' + modifiedItems.length + '</span></h3>';
+      modifiedItems.forEach(name => {
+        html += '<div class="diff-item" onclick="navigate(\'#/type/' + encodeURIComponent(name) + '\')" style="color:var(--orange)">' +
+          '~ ' + esc(name) + '</div>';
+      });
+      html += '</div>';
+    }
+
+    if (newMethods && newMethods.length) {
+      html += '<div class="diff-group">';
+      html += '<h3 style="color:var(--cyan)">⚡ New Methods in ' + esc(toFork) + ' <span class="count-badge" style="background:rgba(57,210,192,0.15);color:var(--cyan)">' + newMethods.length + '</span></h3>';
+      newMethods.forEach(name => {
+        html += '<div class="diff-item" style="color:var(--cyan)">+ ' + esc(name) + '</div>';
+      });
+      html += '</div>';
+    }
+
+    if (!newItems.length && !modifiedItems.length && !newMethods.length) {
+      html += '<div style="color:var(--text-dim);font-size:13px;margin-top:20px">No changes recorded for ' + esc(toFork) + ' in this spec.</div>';
+    }
+
+    // Also show EIPs for this fork if any
+    if (fs.eips && fs.eips.length) {
+      html += '<div class="diff-group">';
+      html += '<h3 style="color:var(--accent)">📜 Related EIPs</h3>';
+      html += '<div class="pill-group">';
+      fs.eips.forEach(eip => {
+        const num = String(eip).replace(/^eip-?/i, '');
+        html += '<a href="https://eips.ethereum.org/EIPS/eip-' + num + '" target="_blank" class="badge" style="background:rgba(88,166,255,0.1);color:var(--accent)">EIP-' + esc(num) + '</a> ';
+      });
+      html += '</div></div>';
+    }
+
+  } else {
+    html += '<div style="color:var(--text-dim);font-size:13px;margin-top:20px">No fork summary data available for this selection.</div>';
+  }
+
+  // Show all forks summary
+  if (forkSummary) {
+    html += '<div class="detail-section" style="margin-top:24px"><h3>All Forks Summary for ' + esc(specName) + '</h3>';
+    html += '<table class="data-table"><thead><tr><th>Fork</th><th>New</th><th>Modified</th><th>Total Defs</th></tr></thead><tbody>';
+    forkOrder.forEach(f => {
+      const fs = forkSummary[f];
+      if (fs) {
+        html += '<tr onclick="navigate(\'#/diff/' + encodeURIComponent(specName) + '?spec=' + encodeURIComponent(specName) + '&to=' + encodeURIComponent(f) + '\')" style="cursor:pointer">' +
+          '<td>' + forkBadge(f) + '</td>' +
+          '<td style="color:var(--green)">' + (fs.new ? fs.new.length : 0) + '</td>' +
+          '<td style="color:var(--orange)">' + (fs.modified ? fs.modified.length : 0) + '</td>' +
+          '<td>' + (fs.total_definitions || '—') + '</td></tr>';
+      }
+    });
+    html += '</tbody></table></div>';
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function navigateDiff(spec, from, to) {
+  const hash = window.location.hash;
+  const params = parseParams(hash);
+  if (spec !== null) params.spec = spec;
+  if (from !== null) params.from = from;
+  if (to !== null) params.to = to;
+  let qs = Object.entries(params).map(([k,v]) => k + '=' + encodeURIComponent(v)).join('&');
+  navigate('#/diff?' + qs);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   BOOT
+   ══════════════════════════════════════════════════════════════ */
+init();
+</script>
+</body>
+</html>
