@@ -365,6 +365,159 @@ def extract_endpoints(profile: SpecProfile, repo_dir: str, branch: str = "main")
 
 # ── CLI ────────────────────────────────────────────────────────────────────
 
+# Known fork names for suffix matching (order matters: longest first to avoid
+# partial matches like "phase0" matching before "phase0altair" if that existed)
+_KNOWN_FORKS = [
+    "bellatrix", "capella", "electra", "deneb", "fulu",
+    "altair", "phase0", "gloas", "heze",
+]
+
+
+def _infer_fork_from_name(name: str, default_fork: str = "phase0") -> tuple:
+    """Infer fork from type name suffix. Returns (base_name, fork).
+
+    Examples:
+        BlockRequestFulu -> (BlockRequest, fulu)
+        AggregateAndProofElectra -> (AggregateAndProof, electra)
+        AttestationData -> (AttestationData, phase0)
+    """
+    name_lower = name.lower()
+    for fork in _KNOWN_FORKS:
+        if name_lower.endswith(fork):
+            base = name[:len(name) - len(fork)]
+            # Only strip if the base isn't empty and the suffix is capitalized
+            if base and name[len(base):][0].isupper():
+                return base.rstrip("_"), fork
+    return name, default_fork
+
+
+def _extract_flat_schemas(profile, repo_path, schema_path, branch: str) -> dict:
+    """Extract schemas from a flat YAML file (no fork directories).
+
+    Fork membership is inferred from type name suffixes. Types without a
+    recognized fork suffix are assigned to the profile's first_fork.
+    """
+    print(f"  Extracting flat schemas from {schema_path.relative_to(repo_path)}...", file=sys.stderr)
+
+    data = load_yaml(schema_path)
+    if not data:
+        return {}
+
+    # Navigate to components.schemas (standard OpenAPI location)
+    schemas = data
+    if "components" in data and "schemas" in data["components"]:
+        schemas = data["components"]["schemas"]
+
+    items = {}
+    default_fork = profile.first_fork or "phase0"
+    rel_path = str(schema_path.relative_to(repo_path))
+    github_base = profile.github_web.format(branch=branch)
+
+    # Domain classification for remote-signing-api types
+    domain_rules = {
+        "signing": "signing", "sign": "signing",
+        "block": "block-signing", "beacon": "block-signing",
+        "attestation": "attestation", "attester": "attestation",
+        "aggregate": "aggregation", "aggregation": "aggregation",
+        "sync": "sync-committee", "contribution": "sync-committee",
+        "deposit": "deposit", "voluntary": "voluntary-exit",
+        "validator": "validator-registration", "registration": "validator-registration",
+        "randao": "randao",
+        "fork": "primitives", "checkpoint": "primitives", "eth1": "primitives",
+        "proposer": "primitives", "indexed": "primitives",
+    }
+
+    for type_name, schema in schemas.items():
+        if not isinstance(schema, dict):
+            continue
+
+        base_name, fork = _infer_fork_from_name(type_name, default_fork)
+        github_url = f"{github_base}/{rel_path}"
+
+        # Extract fields from properties (handles allOf composition)
+        fields = []
+        refs = set()
+        _collect_fields_and_refs(schema, fields, refs)
+
+        # Domain from type name
+        domain = "other"
+        name_lower = type_name.lower()
+        for keyword, dom in domain_rules.items():
+            if keyword in name_lower:
+                domain = dom
+                break
+
+        fork_data = {
+            "fork": fork,
+            "file": rel_path,
+            "line_number": 1,
+            "kind": "class",
+            "is_new": True,
+            "is_modified": False,
+            "code": "",
+            "fields": fields,
+            "github_url": github_url,
+            "description": schema.get("description", ""),
+            "section_path": [],
+            "inline_comments": [],
+            "references": sorted(refs) if refs else [],
+        }
+
+        items[type_name] = {
+            "name": type_name,
+            "kind": "class",
+            "domain": domain,
+            "introduced": fork,
+            "modified_in": [],
+            "forks": {fork: fork_data},
+        }
+
+    print(f"  Extracted {len(items)} schemas from flat file", file=sys.stderr)
+    return items
+
+
+def _collect_fields_and_refs(schema: dict, fields: list, refs: set):
+    """Recursively collect fields and $ref references from a schema.
+
+    Handles allOf/oneOf composition and nested $ref.
+    """
+    if "$ref" in schema:
+        ref_name = extract_schema_name(schema["$ref"])
+        if "." in ref_name:
+            ref_name = ref_name.split(".")[-1]
+        refs.add(ref_name)
+
+    if "properties" in schema:
+        for fname, fschema in schema["properties"].items():
+            if not isinstance(fschema, dict):
+                continue
+            ftype = extract_type_from_schema(fschema)
+            fields.append({
+                "name": fname,
+                "type": ftype,
+                "description": fschema.get("description", ""),
+            })
+            # Collect nested refs
+            if "$ref" in fschema:
+                ref_name = extract_schema_name(fschema["$ref"])
+                if "." in ref_name:
+                    ref_name = ref_name.split(".")[-1]
+                refs.add(ref_name)
+            if "items" in fschema and isinstance(fschema["items"], dict) and "$ref" in fschema["items"]:
+                ref_name = extract_schema_name(fschema["items"]["$ref"])
+                if "." in ref_name:
+                    ref_name = ref_name.split(".")[-1]
+                refs.add(ref_name)
+
+    # Recurse into allOf/oneOf
+    for key in ("allOf", "oneOf"):
+        if key in schema and isinstance(schema[key], list):
+            for sub in schema[key]:
+                if isinstance(sub, dict):
+                    _collect_fields_and_refs(sub, fields, refs)
+
+
+
 def extract_type_schemas(profile: SpecProfile, repo_dir: str, branch: str = "main") -> dict:
     """Extract type schemas from OpenAPI type directories (beacon-APIs style).
 
@@ -372,6 +525,12 @@ def extract_type_schemas(profile: SpecProfile, repo_dir: str, branch: str = "mai
     """
     repo_path = Path(repo_dir)
     types_dir = repo_path / "types"
+
+    # Flat schema file mode (e.g. remote-signing-api: all schemas in one file)
+    if hasattr(profile, 'schema_file') and profile.schema_file:
+        schema_path = repo_path / profile.schema_file
+        if schema_path.exists():
+            return _extract_flat_schemas(profile, repo_path, schema_path, branch)
 
     if not types_dir.is_dir():
         return {}

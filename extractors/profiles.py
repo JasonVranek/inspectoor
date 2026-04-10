@@ -48,6 +48,11 @@ class SpecProfile:
     # OpenAPI spec file (for combined markdown+openapi repos)
     openapi_file: Optional[str] = None
 
+    # Flat schema file (for repos like remote-signing-api where all schemas
+    # live in one file with no types/{fork}/ directory structure). Fork
+    # membership is inferred from type name suffixes.
+    schema_file: Optional[str] = None
+
 
 def detect_forks_from_config(repo_dir: str, config_path: str, specs_subdir: str = "specs") -> list:
     """Detect fork ordering from a mainnet.yaml config file (consensus-specs style).
@@ -298,12 +303,78 @@ BEACON_APIS = SpecProfile(
 )
 
 
+REMOTE_SIGNING_API = SpecProfile(
+    name="remote-signing-api",
+    repo="ethereum/remote-signing-api",
+    source_format="openapi",
+    github_raw="https://raw.githubusercontent.com/ethereum/remote-signing-api/{branch}",
+    github_web="https://github.com/ethereum/remote-signing-api/blob/{branch}",
+    specs_subdir="signing",
+    fork_config_path=None,
+    default_fork_order=[
+        "phase0", "altair", "bellatrix", "capella",
+        "deneb", "electra", "fulu",
+    ],
+    first_fork="phase0",
+    spec_files=[],
+    features_subdir=None,
+    file_domain_rules={},
+    section_domain_rules={},
+    type_alias_sections=[],
+    openapi_file="remote-signing-oapi.yaml",
+    schema_file="signing/schemas.yaml",
+)
+
+
+
+EXECUTION_SPECS = SpecProfile(
+    name="execution-specs",
+    repo="ethereum/execution-specs",
+    source_format="python",
+    github_raw="https://raw.githubusercontent.com/ethereum/execution-specs/{branch}",
+    github_web="https://github.com/ethereum/execution-specs/blob/{branch}",
+    specs_subdir="src/ethereum/forks",
+    fork_config_path=None,
+    default_fork_order=[
+        "frontier", "homestead", "dao_fork", "tangerine_whistle", "spurious_dragon",
+        "byzantium", "constantinople", "istanbul", "muir_glacier", "berlin", "london",
+        "arrow_glacier", "gray_glacier", "paris", "shanghai", "cancun", "prague", "osaka",
+    ],
+    first_fork="frontier",
+    spec_files=[],
+    features_subdir=None,
+    file_domain_rules={},
+    section_domain_rules={},
+    type_alias_sections=[],
+)
+
+
+EXECUTION_APIS = SpecProfile(
+    name="execution-apis",
+    repo="ethereum/execution-apis",
+    source_format="openrpc",
+    github_raw="https://raw.githubusercontent.com/ethereum/execution-apis/{branch}",
+    github_web="https://github.com/ethereum/execution-apis/blob/{branch}",
+    specs_subdir="src",
+    fork_config_path=None,
+    default_fork_order=["paris", "shanghai", "cancun", "prague", "osaka", "amsterdam"],
+    first_fork="paris",
+    spec_files=[],
+    features_subdir=None,
+    file_domain_rules={},
+    section_domain_rules={},
+    type_alias_sections=[],
+)
+
 # Registry
 PROFILES = {
     "consensus-specs": CONSENSUS_SPECS,
     "builder-specs": BUILDER_SPECS,
     "relay-specs": RELAY_SPECS,
     "beacon-apis": BEACON_APIS,
+    "remote-signing-api": REMOTE_SIGNING_API,
+    "execution-specs": EXECUTION_SPECS,
+    "execution-apis": EXECUTION_APIS,
 }
 
 

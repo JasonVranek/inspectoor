@@ -21,6 +21,8 @@ sys.path.insert(0, str(Path(__file__).parent / "extractors"))
 from profiles import get_profile
 from extract_markdown import extract_all, build_output
 from extract_openapi import extract_endpoints, extract_type_schemas
+from extract_python import extract_all as extract_python_all, build_output as build_python_output
+from extract_openrpc import extract_all as extract_openrpc_all, build_output as build_openrpc_output
 from enrich import enrich
 
 
@@ -38,8 +40,39 @@ def build(profile_name: str, repo_dir: str, branch: str = "main",
     print(f"{'='*60}\n", file=sys.stderr)
 
     is_pure_openapi = profile.source_format == "openapi"
+    is_python = profile.source_format == "python"
+    is_openrpc = profile.source_format == "openrpc"
 
-    if is_pure_openapi:
+    if is_openrpc:
+        # OpenRPC extraction (e.g., execution-apis)
+        print("Step 1: Extracting OpenRPC methods and schemas...", file=sys.stderr)
+        items, endpoints, eip_map = extract_openrpc_all(
+            profile=profile, repo_dir=repo_dir, branch=branch,
+        )
+
+        print(f"\nStep 2: Building output structure...", file=sys.stderr)
+        output = build_openrpc_output(
+            profile, items, endpoints, eip_map, branch
+        )
+
+        print(f"\nStep 3: Skipping markdown enrichment (OpenRPC)", file=sys.stderr)
+
+    elif is_python:
+        # Python AST extraction (e.g., execution-specs)
+        print("Step 1: Extracting Python source definitions...", file=sys.stderr)
+        items, constants, type_aliases, files_processed, fork_order, eip_map = extract_python_all(
+            profile=profile, repo_dir=repo_dir, branch=branch,
+        )
+
+        print(f"\nStep 2: Building output structure...", file=sys.stderr)
+        output = build_python_output(
+            profile, items, constants, type_aliases,
+            files_processed, fork_order, eip_map, branch
+        )
+
+        print(f"\nStep 3: Skipping markdown enrichment (Python source)", file=sys.stderr)
+
+    elif is_pure_openapi:
         # Pure OpenAPI profile (e.g., beacon-APIs): extract types from YAML schemas
         print("Step 1: Extracting type schemas from OpenAPI...", file=sys.stderr)
         type_schema_items = extract_type_schemas(profile, repo_dir, branch)
@@ -141,8 +174,11 @@ def build(profile_name: str, repo_dir: str, branch: str = "main",
         else:
             print("\nStep 3: Skipping enrichment", file=sys.stderr)
 
-    # Step 4: Extract OpenAPI endpoints (both modes)
-    if profile.openapi_file:
+    # Step 4: Extract OpenAPI endpoints (skip for openrpc -- already has endpoints)
+    if is_openrpc:
+        print("\nStep 4: Endpoints already extracted (OpenRPC)", file=sys.stderr)
+        output["_meta"]["total_endpoints"] = len(output.get("endpoints", {}))
+    elif profile.openapi_file:
         print("\nStep 4: Extracting OpenAPI endpoints...", file=sys.stderr)
         endpoints = extract_endpoints(profile, repo_dir, branch)
         output["endpoints"] = endpoints

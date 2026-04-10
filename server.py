@@ -649,6 +649,9 @@ async def _reindex(store: SpecStore, indexes_dir: str, repos_dir: Optional[str],
         "builder-specs": "specs/builder-specs",
         "relay-specs": "specs/relay-specs",
         "beacon-apis": "specs/beacon-APIs",
+        "remote-signing-api": "specs/remote-signing-api",
+        "execution-specs": "specs/execution-specs",
+        "execution-apis": "specs/execution-apis",
     }
 
     # Branch overrides
