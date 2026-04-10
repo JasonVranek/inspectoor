@@ -166,9 +166,19 @@ class SpecStore:
 
         return result
 
+    @staticmethod
+    def _normalize(s: str) -> str:
+        """Normalize for matching: lowercase, strip underscores/hyphens, collapse camelCase."""
+        import re
+        # Insert separator before uppercase runs (camelCase -> camel_case)
+        s = re.sub(r'([a-z])([A-Z])', r'\1_\2', s)
+        # Lowercase and strip separators
+        return s.lower().replace("_", "").replace("-", "")
+
     def lookup_endpoint(self, query: str) -> list:
         """Search endpoints by path, operation, or keyword."""
         query_lower = query.lower()
+        query_norm = self._normalize(query)
         results = []
 
         for ep_key, (spec_name, endpoint) in self.all_endpoints.items():
@@ -180,7 +190,9 @@ class SpecStore:
             if (query_lower in path.lower()
                 or query_lower in op_id.lower()
                 or query_lower in summary.lower()
-                or any(query_lower in t.lower() for t in tags)):
+                or any(query_lower in t.lower() for t in tags)
+                or query_norm in self._normalize(path)
+                or query_norm in self._normalize(op_id)):
 
                 result = {
                     "spec": spec_name,
@@ -285,12 +297,15 @@ class SpecStore:
     def search(self, query: str, limit: int = 20) -> dict:
         """Search across all items, constants, endpoints."""
         query_lower = query.lower()
+        query_norm = self._normalize(query)
         results = {"items": [], "constants": [], "endpoints": [], "type_aliases": []}
 
         # Search items
         for spec_name, data in self.indexes.items():
             for item_name, item in data.get("items", {}).items():
-                if query_lower in item_name.lower() or query_lower in item.get("domain", "").lower():
+                if (query_lower in item_name.lower()
+                    or query_norm in self._normalize(item_name)
+                    or query_lower in item.get("domain", "").lower()):
                     results["items"].append({
                         "name": item_name,
                         "spec": spec_name,
@@ -301,7 +316,7 @@ class SpecStore:
 
             # Search constants
             for const_name, entries in data.get("constants", {}).items():
-                if query_lower in const_name.lower():
+                if query_lower in const_name.lower() or query_norm in self._normalize(const_name):
                     results["constants"].append({
                         "name": const_name,
                         "spec": spec_name,
@@ -310,7 +325,7 @@ class SpecStore:
 
             # Search type aliases
             for alias_name, entries in data.get("type_aliases", {}).items():
-                if query_lower in alias_name.lower():
+                if query_lower in alias_name.lower() or query_norm in self._normalize(alias_name):
                     results["type_aliases"].append({
                         "name": alias_name,
                         "spec": spec_name,
@@ -321,7 +336,9 @@ class SpecStore:
         for ep_key, (spec_name, ep) in self.all_endpoints.items():
             if (query_lower in ep.get("path", "").lower()
                 or query_lower in ep.get("summary", "").lower()
-                or query_lower in ep.get("operation_id", "").lower()):
+                or query_lower in ep.get("operation_id", "").lower()
+                or query_norm in self._normalize(ep.get("path", ""))
+                or query_norm in self._normalize(ep.get("operation_id", ""))):
                 results["endpoints"].append({
                     "spec": spec_name,
                     "method": ep.get("method", ""),
