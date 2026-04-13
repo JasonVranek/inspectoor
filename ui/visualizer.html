@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Inspectoor - Transaction Lifecycle Visualizer</title>
+<style>
+:root {
+  --bg: #0d1117; --surface: #161b22; --surface-2: #1c2128; --border: #30363d;
+  --text: #e6edf3; --text-muted: #8b949e; --text-dim: #6e7681;
+  --accent: #58a6ff; --accent-hover: #79c0ff; --green: #3fb950; --red: #f85149;
+  --orange: #d29922; --purple: #bc8cff; --pink: #f778ba; --cyan: #39d2c0;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:var(--font-sans); min-height:100vh; display:flex; flex-direction:column; }
+
+/* Header / Nav */
+.header { display:flex; align-items:center; padding:12px 20px; background:var(--surface); border-bottom:1px solid var(--border); gap:16px; flex-shrink:0; z-index:100; }
+.logo { font-size:18px; font-weight:700; cursor:pointer; white-space:nowrap; }
+.logo .accent { color:var(--accent); }
+.nav-tabs { display:flex; gap:4px; }
+.nav-tab { background:none; border:1px solid transparent; color:var(--text-muted); padding:6px 14px; border-radius:6px; cursor:pointer; font-size:13px; font-family:var(--font-sans); transition:all .15s; }
+.nav-tab:hover { color:var(--text); background:var(--surface-2); }
+.nav-tab.active { color:var(--accent); border-color:var(--accent); background:rgba(88,166,255,.08); }
+.fork-selector select { background:var(--surface-2); color:var(--text); border:1px solid var(--border); padding:6px 12px; border-radius:6px; font-size:13px; font-family:var(--font-sans); cursor:pointer; }
+.fork-selector select:hover { border-color:var(--accent); }
+
+/* Legend */
+.legend-bar { display:flex; align-items:center; gap:16px; padding:10px 20px; background:var(--surface); border-bottom:1px solid var(--border); flex-wrap:wrap; flex-shrink:0; }
+.legend-item { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted); }
+.legend-dot { width:10px; height:10px; border-radius:3px; }
+.legend-bar .title { font-size:13px; font-weight:600; color:var(--text); margin-right:8px; }
+
+/* Main area */
+.main-area { flex:1; overflow:auto; position:relative; }
+.svg-container { min-width:2100px; min-height:680px; padding:0; }
+
+/* SVG styles */
+svg text { font-family: var(--font-sans); }
+.swim-lane-bg { fill: var(--surface); stroke: var(--border); stroke-width: 0.5; opacity: 0.3; }
+.swim-lane-bg:nth-child(even) { opacity: 0.15; }
+.swim-label { fill: var(--text-dim); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+.phase-label { fill: var(--text-muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; }
+.phase-separator { stroke: var(--border); stroke-width: 1; stroke-dasharray: 6 4; }
+.node-rect { rx: 8; ry: 8; cursor: pointer; transition: filter 0.15s; }
+.node-rect:hover { filter: brightness(1.3) drop-shadow(0 0 8px rgba(88,166,255,0.3)); }
+.node-label { fill: var(--text); font-size: 11px; font-weight: 600; pointer-events: none; }
+.node-spec { fill: var(--text-dim); font-size: 9px; pointer-events: none; }
+.edge-path { fill: none; stroke-width: 1.5; opacity: 0.6; }
+.edge-path:hover { opacity: 1; stroke-width: 2.5; }
+.edge-label { font-size: 9px; fill: var(--text-dim); cursor: pointer; }
+.edge-label:hover { fill: var(--accent); }
+.grid-line { stroke: var(--border); stroke-width: 0.3; opacity: 0.3; }
+.node-group.dimmed .node-rect { opacity: 0.2; }
+.node-group.dimmed .node-label, .node-group.dimmed .node-spec { opacity: 0.2; }
+.edge-path.dimmed { opacity: 0.08; }
+.edge-label.dimmed { opacity: 0.15; }
+.node-group.highlighted .node-rect { filter: brightness(1.4) drop-shadow(0 0 12px rgba(88,166,255,0.5)); }
+.edge-path.highlighted { opacity: 1; stroke-width: 2.5; }
+
+/* Tooltip */
+.tooltip { position:fixed; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:10px 14px; font-size:12px; color:var(--text); pointer-events:none; z-index:200; max-width:320px; box-shadow:0 8px 24px rgba(0,0,0,.4); display:none; }
+.tooltip .tt-name { font-weight:700; font-size:13px; margin-bottom:4px; }
+.tooltip .tt-spec { color:var(--text-muted); font-size:11px; }
+
+/* Detail panel */
+.detail-panel { position:fixed; right:0; top:0; width:380px; height:100vh; background:var(--surface); border-left:1px solid var(--border); z-index:150; transform:translateX(100%); transition:transform .25s ease; display:flex; flex-direction:column; box-shadow:-4px 0 24px rgba(0,0,0,.3); }
+.detail-panel.open { transform:translateX(0); }
+.detail-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border); }
+.detail-header h3 { font-size:15px; font-weight:700; }
+.detail-close { background:none; border:none; color:var(--text-muted); font-size:20px; cursor:pointer; padding:4px 8px; border-radius:4px; }
+.detail-close:hover { background:var(--surface-2); color:var(--text); }
+.detail-body { padding:20px; overflow-y:auto; flex:1; }
+.detail-body .field { margin-bottom:16px; }
+.detail-body .field-label { font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; font-weight:600; }
+.detail-body .field-value { font-size:13px; color:var(--text); line-height:1.5; }
+.detail-body .field-value code { font-family:var(--font-mono); font-size:12px; background:var(--surface-2); padding:2px 6px; border-radius:4px; color:var(--cyan); }
+.detail-body .spec-badge { display:inline-block; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:600; }
+.detail-body a { color:var(--accent); text-decoration:none; }
+.detail-body a:hover { text-decoration:underline; }
+.detail-actions { padding:16px 20px; border-top:1px solid var(--border); }
+.detail-actions a { display:inline-block; padding:8px 16px; background:rgba(88,166,255,.1); color:var(--accent); border-radius:6px; font-size:13px; text-decoration:none; font-weight:600; }
+.detail-actions a:hover { background:rgba(88,166,255,.2); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo" onclick="window.location='index.html'">&#128269; The <span class="accent">Inspectoor</span></div>
+  <div class="nav-tabs">
+    <button class="nav-tab" onclick="window.location='index.html'">Specs</button>
+    <button class="nav-tab" onclick="window.location='index.html#/types'">Types</button>
+    <button class="nav-tab" onclick="window.location='index.html#/endpoints'">Endpoints</button>
+    <button class="nav-tab" onclick="window.location='index.html#/diff'">Diff</button>
+    <button class="nav-tab active">Visualizer</button>
+  </div>
+  <div style="flex:1"></div>
+  <div class="fork-selector">
+    <select id="forkSelect" onchange="onForkChange(this.value)">
+      <option value="deneb">Deneb</option>
+      <option value="electra">Electra</option>
+      <option value="fulu">Fulu</option>
+    </select>
+  </div>
+</div>
+
+<div class="legend-bar">
+  <span class="title">Spec Origin:</span>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--cyan)"></div>execution-apis</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>execution-specs</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--purple)"></div>consensus-specs</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div>builder-specs</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--pink)"></div>relay-specs</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div>beacon-apis</div>
+  <div style="flex:1"></div>
+  <span style="font-size:11px;color:var(--text-dim)">Click a node for details &middot; Click edge labels to explore types</span>
+</div>
+
+<div class="main-area">
+  <div class="svg-container">
+    <svg id="mainSvg" width="2100" height="680" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<div class="detail-panel" id="detailPanel">
+  <div class="detail-header">
+    <h3 id="detailTitle">Node Details</h3>
+    <button class="detail-close" onclick="closeDetail()">&times;</button>
+  </div>
+  <div class="detail-body" id="detailBody"></div>
+  <div class="detail-actions" id="detailActions"></div>
+</div>
+
+<script>
+// === SPEC COLORS ===
+const SPEC_COLORS = {
+  'execution-apis': '#39d2c0',
+  'execution-specs': '#3fb950',
+  'consensus-specs': '#bc8cff',
+  'builder-specs': '#d29922',
+  'relay-specs': '#f778ba',
+  'beacon-apis': '#58a6ff'
+};
+
+// === ACTORS (swim lanes) ===
+const ACTORS = ['User', 'EL', 'CL / BN', 'Sidecar', 'Builder', 'Relay'];
+const ACTOR_Y = {};
+const LANE_H = 100;
+const TOP_OFFSET = 60;
+ACTORS.forEach((a, i) => { ACTOR_Y[a] = TOP_OFFSET + i * LANE_H + LANE_H / 2; });
+
+// === PHASE X RANGES ===
+const PHASES = [
+  { id: 'submission', label: 'SUBMISSION', x0: 100, x1: 340 },
+  { id: 'building', label: 'BLOCK BUILDING', x0: 340, x1: 1150 },
+  { id: 'proposal', label: 'PROPOSAL + VALIDATION', x0: 1150, x1: 1550 },
+  { id: 'finality', label: 'ATTESTATION + FINALITY', x0: 1550, x1: 2050 }
+];
+
+// === NODE DATA ===
+const NODES_BASE = [
+  // Phase 1: Submission
+  { id:'sendRawTx', label:'eth_sendRawTransaction', spec:'execution-apis', actor:'User', x:180, y:ACTOR_Y['User'],
+    desc:'User submits a signed transaction to the execution client.', params:'Transaction (RLP-encoded signed tx)', returns:'Transaction hash (bytes32)',
+    github:'https://github.com/ethereum/execution-apis' },
+  { id:'mempool', label:'Mempool / P2P', spec:'execution-specs', actor:'EL', x:180, y:ACTOR_Y['EL'],
+    desc:'Transaction enters the EL mempool and is gossiped to peers via devp2p.', params:'Validated transaction', returns:'—',
+    github:'https://github.com/ethereum/execution-specs', conceptual:true },
+
+  // Phase 2A: Local path
+  { id:'fcu', label:'engine_forkchoiceUpdatedV3', spec:'execution-apis', actor:'EL', x:440, y:ACTOR_Y['EL'],
+    desc:'CL sends fork choice state and payload attributes to start block building.', params:'ForkchoiceState, PayloadAttributes', returns:'PayloadId',
+    github:'https://github.com/ethereum/execution-apis', path:'local' },
+  { id:'stateTransition', label:'state_transition', spec:'execution-specs', actor:'EL', x:680, y:ACTOR_Y['EL'],
+    desc:'EL executes transactions against current state, producing state changes and receipts.', params:'Block, State', returns:'Updated State',
+    github:'https://github.com/ethereum/execution-specs', path:'local' },
+  { id:'getPayload', label:'engine_getPayloadV3', spec:'execution-apis', actor:'EL', x:920, y:ACTOR_Y['EL'],
+    desc:'CL retrieves the built execution payload from the EL.', params:'PayloadId', returns:'ExecutionPayload',
+    github:'https://github.com/ethereum/execution-apis', path:'local' },
+
+  // Phase 2B: PBS path
+  // Step 1: Validator registration -- CL/BN sends to relay (via mev-boost)
+  { id:'regVal', label:'registerValidator', spec:'beacon-apis', actor:'CL / BN', x:400, y:ACTOR_Y['CL / BN'],
+    desc:'CL registers validator preferences (fee recipient, gas limit) with the relay network via mev-boost/commit-boost.', params:'SignedValidatorRegistration[]', returns:'—',
+    github:'https://github.com/ethereum/beacon-APIs', path:'pbs' },
+  { id:'regValSidecar', label:'registerValidator', spec:'builder-specs', actor:'Sidecar', x:400, y:ACTOR_Y['Sidecar'],
+    desc:'Sidecar (mev-boost / commit-boost) forwards validator registrations to all connected relays.', params:'SignedValidatorRegistration[]', returns:'—',
+    github:'https://github.com/ethereum/builder-specs', path:'pbs' },
+  { id:'regValRelay', label:'registerValidator', spec:'builder-specs', actor:'Relay', x:400, y:ACTOR_Y['Relay'],
+    desc:'Relay stores validator registrations. Builders query these to learn proposer preferences.', params:'SignedValidatorRegistration[]', returns:'—',
+    github:'https://github.com/ethereum/builder-specs', path:'pbs' },
+  // Step 2: Builder independently builds a block and submits to relay
+  { id:'builderBuild', label:'build block', spec:'execution-specs', actor:'Builder', x:620, y:ACTOR_Y['Builder'],
+    desc:'Builder selects transactions from the mempool, executes them, constructs an ExecutionPayload, and creates a bid.', params:'transactions from mempool', returns:'ExecutionPayload + bid',
+    github:'https://github.com/ethereum/execution-specs', path:'pbs' },
+  { id:'builderSubmit', label:'builder/blocks', spec:'relay-specs', actor:'Relay', x:780, y:ACTOR_Y['Relay'],
+    desc:'Builder submits a signed bid with full execution payload to the relay. The relay simulates the block and stores the bid if valid.', params:'SubmitBlockRequest', returns:'—',
+    github:'https://github.com/flashbots/relay-specs', path:'pbs' },
+  // Step 3: At proposal time, CL/BN requests the best bid from relay
+  { id:'getHeader', label:'getHeader', spec:'builder-specs', actor:'CL / BN', x:780, y:ACTOR_Y['CL / BN'],
+    desc:'CL calls getHeader on the sidecar (mev-boost / commit-boost) to request the best execution payload header.', params:'slot, parent_hash, pubkey', returns:'SignedBuilderBid',
+    github:'https://github.com/ethereum/builder-specs', path:'pbs' },
+  { id:'getHeaderSidecar', label:'getHeader', spec:'builder-specs', actor:'Sidecar', x:780, y:ACTOR_Y['Sidecar'],
+    desc:'Sidecar fans out getHeader to all connected relays, selects the highest-value bid, and returns it to the CL.', params:'slot, parent_hash, pubkey', returns:'SignedBuilderBid (best)',
+    github:'https://github.com/ethereum/builder-specs', path:'pbs' },
+  { id:'getHeaderRelay', label:'getHeader', spec:'builder-specs', actor:'Relay', x:780, y:ACTOR_Y['Relay'],
+    desc:'Relay returns its best SignedBuilderBid for the requested slot.', params:'slot, parent_hash, pubkey', returns:'SignedBuilderBid',
+    github:'https://github.com/ethereum/builder-specs', path:'pbs' },
+  // Step 4: CL/BN produces blinded block and sends back to relay
+  { id:'produceBlock', label:'produceBlockV3', spec:'beacon-apis', actor:'CL / BN', x:950, y:ACTOR_Y['CL / BN'],
+    desc:'CL assembles a blinded beacon block wrapping the ExecutionPayloadHeader from the relay bid.', params:'slot, randao_reveal, graffiti', returns:'BlindedBeaconBlock',
+    github:'https://github.com/ethereum/beacon-APIs', path:'pbs' },
+  { id:'submitBlinded', label:'submitBlindedBlock', spec:'builder-specs', actor:'Sidecar', x:1060, y:ACTOR_Y['Sidecar'],
+    desc:'Sidecar forwards the signed blinded block to the winning relay.', params:'SignedBlindedBeaconBlock', returns:'ExecutionPayload',
+    github:'https://github.com/ethereum/builder-specs', path:'pbs' },
+  { id:'submitBlindedRelay', label:'submitBlindedBlock', spec:'builder-specs', actor:'Relay', x:1060, y:ACTOR_Y['Relay'],
+    desc:'Relay verifies the blinded block signature, publishes the full block to the P2P network, and returns the ExecutionPayload.', params:'SignedBlindedBeaconBlock', returns:'ExecutionPayload',
+    github:'https://github.com/ethereum/builder-specs', path:'pbs' },
+
+  // Phase 3: Proposal + Validation
+  { id:'publishBlock', label:'publishBlockV2', spec:'beacon-apis', actor:'CL / BN', x:1220, y:ACTOR_Y['CL / BN'],
+    desc:'CL publishes the signed beacon block (with execution payload) to the consensus P2P network.', params:'SignedBeaconBlock', returns:'—',
+    github:'https://github.com/ethereum/beacon-APIs' },
+  { id:'processBlock', label:'process_block', spec:'consensus-specs', actor:'CL / BN', x:1390, y:ACTOR_Y['CL / BN'],
+    desc:'Consensus state transition: validates block header, execution payload, attestations, etc.', params:'State, SignedBeaconBlock', returns:'Updated State',
+    github:'https://github.com/ethereum/consensus-specs' },
+  { id:'newPayload', label:'engine_newPayloadV3', spec:'execution-apis', actor:'EL', x:1390, y:ACTOR_Y['EL'],
+    desc:'CL sends the execution payload to EL for independent validation against the EL state.', params:'ExecutionPayload, versioned_hashes, parent_beacon_block_root', returns:'PayloadStatus',
+    github:'https://github.com/ethereum/execution-apis' },
+
+  // Phase 4: Attestation + Finality
+  { id:'submitAttest', label:'submitPoolAttestations', spec:'beacon-apis', actor:'CL / BN', x:1620, y:ACTOR_Y['CL / BN'],
+    desc:'Validators submit attestations for the block head, source, and target checkpoints.', params:'Attestation[]', returns:'—',
+    github:'https://github.com/ethereum/beacon-APIs' },
+  { id:'processAttest', label:'process_attestation', spec:'consensus-specs', actor:'CL / BN', x:1810, y:ACTOR_Y['CL / BN'],
+    desc:'Consensus processes each attestation: validates signature, updates fork choice weights.', params:'State, Attestation', returns:'Updated State',
+    github:'https://github.com/ethereum/consensus-specs' },
+  { id:'finality', label:'Finality', spec:'consensus-specs', actor:'CL / BN', x:1960, y:ACTOR_Y['CL / BN'],
+    desc:'After 2 epochs of justified checkpoints, the block and all ancestors are finalized (irreversible).', params:'Justified checkpoints', returns:'Finalized checkpoint',
+    github:'https://github.com/ethereum/consensus-specs', conceptual:true }
+];
+
+// === EDGES ===
+const EDGES_BASE = [
+  { from:'sendRawTx', to:'mempool', label:'Transaction', type:'Transaction' },
+  // Local path
+  { from:'mempool', to:'fcu', label:'', type:'' },
+  { from:'fcu', to:'stateTransition', label:'PayloadId', type:'PayloadId' },
+  { from:'stateTransition', to:'getPayload', label:'ExecutionPayload', type:'ExecutionPayload' },
+  { from:'getPayload', to:'publishBlock', label:'ExecutionPayload', type:'ExecutionPayload', path:'local' },
+  // PBS path
+  { from:'regVal', to:'regValSidecar', label:'SignedValidatorRegistration[]', type:'SignedValidatorRegistration' },
+  { from:'regValSidecar', to:'regValRelay', label:'', type:'' },
+  { from:'mempool', to:'builderBuild', label:'Transactions', type:'Transaction' },
+  { from:'builderBuild', to:'builderSubmit', label:'SubmitBlockRequest', type:'SubmitBlockRequest' },
+  { from:'getHeader', to:'getHeaderSidecar', label:'', type:'' },
+  { from:'getHeaderSidecar', to:'getHeaderRelay', label:'', type:'' },
+  { from:'getHeaderRelay', to:'produceBlock', label:'SignedBuilderBid', type:'SignedBuilderBid' },
+  { from:'produceBlock', to:'submitBlinded', label:'SignedBlindedBeaconBlock', type:'SignedBlindedBeaconBlock' },
+  { from:'submitBlinded', to:'submitBlindedRelay', label:'SignedBlindedBeaconBlock', type:'SignedBlindedBeaconBlock' },
+  { from:'submitBlindedRelay', to:'publishBlock', label:'ExecutionPayload', type:'ExecutionPayload', path:'pbs' },
+  // Converged
+  { from:'publishBlock', to:'processBlock', label:'SignedBeaconBlock', type:'SignedBeaconBlock' },
+  { from:'processBlock', to:'newPayload', label:'ExecutionPayload', type:'ExecutionPayload' },
+  { from:'newPayload', to:'submitAttest', label:'PayloadStatus (VALID)', type:'PayloadStatus' },
+  { from:'submitAttest', to:'processAttest', label:'Attestation[]', type:'Attestation' },
+  { from:'processAttest', to:'finality', label:'Justified checkpoints', type:'' }
+];
+
+// === FORK VARIANTS ===
+const FORK_DATA = {
+  deneb: {
+    fcu: { label:'engine_forkchoiceUpdatedV3', params:'ForkchoiceState, PayloadAttributesV3', returns:'PayloadId' },
+    getPayload: { label:'engine_getPayloadV3', returns:'ExecutionPayloadV3 + BlobsBundle' },
+    newPayload: { label:'engine_newPayloadV3', params:'ExecutionPayloadV3, Array[hash32], hash32' },
+    getHeader: { returns:'Deneb.SignedBuilderBid' },
+    submitBlinded: { params:'Deneb.SignedBlindedBeaconBlock', returns:'Deneb.ExecutionPayloadAndBlobsBundle' },
+    publishBlock: { params:'Deneb.SignedBlockContents' }
+  },
+  electra: {
+    fcu: { label:'engine_forkchoiceUpdatedV3', params:'ForkchoiceState, PayloadAttributesV3', returns:'PayloadId' },
+    getPayload: { label:'engine_getPayloadV4', returns:'ExecutionPayloadV3 + ExecutionRequests' },
+    newPayload: { label:'engine_newPayloadV4', params:'ExecutionPayloadV3, Array[hash32], hash32, Array[bytes]' },
+    getHeader: { returns:'Electra.SignedBuilderBid' },
+    submitBlinded: { params:'Electra.SignedBlindedBeaconBlock', returns:'ExecutionPayload' },
+    publishBlock: { params:'Electra.SignedBlockContents' }
+  },
+  fulu: {
+    fcu: { label:'engine_forkchoiceUpdatedV4', params:'ForkchoiceState, PayloadAttributesV4', returns:'PayloadId' },
+    getPayload: { label:'engine_getPayloadV6', returns:'ExecutionPayloadV4' },
+    newPayload: { label:'engine_newPayloadV5', params:'ExecutionPayloadV4, Array[hash32], hash32, Array[bytes]' },
+    getHeader: { returns:'Electra.SignedBuilderBid (no Fulu variant yet)' },
+    submitBlinded: { params:'SignedBlindedBeaconBlock', returns:'Fulu.ExecutionPayloadAndBlobsBundle' },
+    publishBlock: { params:'Fulu.SignedBlockContents' }
+  }
+};
+
+let currentFork = 'deneb';
+let catalog = null;
+let highlightedNode = null;
+
+// Load catalog
+fetch('catalog.json').then(r => r.json()).then(d => { catalog = d; }).catch(() => {});
+
+function getNodes(fork) {
+  const forkOverrides = FORK_DATA[fork] || {};
+  return NODES_BASE.map(n => {
+    const ov = forkOverrides[n.id];
+    if (!ov) return {...n};
+    return {...n, ...ov, _origLabel: n.label};
+  });
+}
+
+function onForkChange(fork) {
+  currentFork = fork;
+  render();
+}
+
+function render() {
+  const svg = document.getElementById('mainSvg');
+  svg.innerHTML = '';
+  const nodes = getNodes(currentFork);
+  const nodeMap = {};
+  nodes.forEach(n => { nodeMap[n.id] = n; });
+
+  // Defs
+  const defs = el('defs');
+  // Arrowheads drawn as explicit path elements per edge
+  svg.appendChild(defs);
+
+  // Grid
+  const gridG = el('g');
+  for (let x = 100; x < 2100; x += 40) gridG.appendChild(el('line', { x1:x, y1:TOP_OFFSET-20, x2:x, y2:TOP_OFFSET+LANE_H*6, class:'grid-line' }));
+  for (let y = TOP_OFFSET; y <= TOP_OFFSET+LANE_H*5; y += 40) gridG.appendChild(el('line', { x1:80, y1:y, x2:1620, y2:y, class:'grid-line' }));
+  svg.appendChild(gridG);
+
+  // Swim lanes
+  const lanesG = el('g');
+  ACTORS.forEach((actor, i) => {
+    const ly = TOP_OFFSET + i * LANE_H;
+    lanesG.appendChild(el('rect', { x:80, y:ly, width:2010, height:LANE_H, class:'swim-lane-bg', rx:'0' }));
+    const txt = el('text', { x:20, y:ly + LANE_H/2 + 4, class:'swim-label' });
+    txt.textContent = actor;
+    lanesG.appendChild(txt);
+  });
+  svg.appendChild(lanesG);
+
+  // Phase headers + separators
+  const phaseG = el('g');
+  PHASES.forEach(p => {
+    const txt = el('text', { x:(p.x0+p.x1)/2, y:TOP_OFFSET - 30, class:'phase-label', 'text-anchor':'middle' });
+    txt.textContent = p.label;
+    phaseG.appendChild(txt);
+    phaseG.appendChild(el('line', { x1:p.x0, y1:TOP_OFFSET-20, x2:p.x0, y2:TOP_OFFSET+LANE_H*5, class:'phase-separator' }));
+  });
+  svg.appendChild(phaseG);
+
+  // Path labels
+  const pathLblG = el('g');
+  const localLbl = el('text', { x:680, y:ACTOR_Y['EL'] - 38, 'text-anchor':'middle', 'font-size':'10', fill:'#3fb950', opacity:'0.7', 'font-weight':'600' });
+  localLbl.textContent = '▾ LOCAL PATH';
+  pathLblG.appendChild(localLbl);
+  const pbsLbl = el('text', { x:700, y:ACTOR_Y['Sidecar'] - 38, 'text-anchor':'middle', 'font-size':'10', fill:'#d29922', opacity:'0.7', 'font-weight':'600' });
+  pbsLbl.textContent = '▾ PBS PATH';
+  pathLblG.appendChild(pbsLbl);
+  svg.appendChild(pathLblG);
+
+  // Edges
+  const edgesG = el('g');
+  EDGES_BASE.forEach((edge, ei) => {
+    const fromN = nodeMap[edge.from];
+    const toN = nodeMap[edge.to];
+    if (!fromN || !toN) return;
+    const NW = 200, NH = 44;
+    let x1, y1, x2, y2;
+    const sameLane = Math.abs(fromN.y - toN.y) < 10;
+    const GAP = 6; // space for arrowhead visibility
+    if (sameLane) {
+      if (fromN.x < toN.x) {
+        x1 = fromN.x + NW/2 + GAP; y1 = fromN.y;
+        x2 = toN.x - NW/2 - GAP; y2 = toN.y;
+      } else {
+        x1 = fromN.x - NW/2 - GAP; y1 = fromN.y;
+        x2 = toN.x + NW/2 + GAP; y2 = toN.y;
+      }
+    } else {
+      const goingDown = toN.y > fromN.y;
+      if (goingDown) {
+        x1 = fromN.x; y1 = fromN.y + NH/2 + GAP;
+        x2 = toN.x; y2 = toN.y - NH/2 - GAP;
+      } else {
+        x1 = fromN.x; y1 = fromN.y - NH/2 - GAP;
+        x2 = toN.x; y2 = toN.y + NH/2 + GAP;
+      }
+    }
+    let d, arrowAngle;
+    const dx = x2 - x1, dy = y2 - y1;
+    if (Math.abs(dy) < 10) {
+      d = `M${x1} ${y1} L${x2} ${y2}`;
+      arrowAngle = Math.atan2(dy, dx);
+    } else {
+      // Cross-lane: depart horizontally from source, arrive vertically at target
+      const midX = (x1 + x2) / 2;
+      d = `M${x1} ${y1} C${midX} ${y1} ${x2} ${y1} ${x2} ${y2}`;
+      arrowAngle = dy > 0 ? Math.PI/2 : -Math.PI/2; // straight down or up
+    }
+    const specKey = fromN.spec.replace(/[^a-z]/g,'');
+    const color = SPEC_COLORS[fromN.spec] || '#8b949e';
+    const path = el('path', { d:d, class:'edge-path', stroke:color, 'data-edge-idx':ei });
+    edgesG.appendChild(path);
+    // Draw arrowhead polygon at endpoint
+    const aSize = 12;
+    const angle = arrowAngle;
+    const ax = x2, ay = y2;
+    const p1x = ax - aSize * Math.cos(angle - 0.4), p1y = ay - aSize * Math.sin(angle - 0.4);
+    const p2x = ax - aSize * Math.cos(angle + 0.4), p2y = ay - aSize * Math.sin(angle + 0.4);
+    const arrowD = 'M'+ax+' '+ay+'L'+p1x+' '+p1y+'L'+p2x+' '+p2y+'Z';
+    const arrowPath = el('path', { d:arrowD, fill:color, opacity:'0.9', class:'edge-arrow' });
+    edgesG.appendChild(arrowPath);
+    if (edge.label) {
+      const mx = (x1+x2)/2, my = (y1+y2)/2 - 8;
+      const lbl = el('text', { x:mx, y:my, class:'edge-label', 'text-anchor':'middle', 'data-type':edge.type, 'data-edge-idx':ei });
+      lbl.textContent = edge.label;
+      lbl.onclick = () => { if (edge.type) window.location = 'index.html#/type/' + edge.type; };
+      edgesG.appendChild(lbl);
+    }
+  });
+  svg.appendChild(edgesG);
+
+  // Nodes
+  const nodesG = el('g');
+  nodes.forEach(n => {
+    const NW = 200, NH = 44;
+    const g = el('g', { class:'node-group', 'data-id':n.id, transform:`translate(${n.x - NW/2}, ${n.y - NH/2})` });
+    // Background rect
+    const color = SPEC_COLORS[n.spec] || '#8b949e';
+    g.appendChild(el('rect', { x:0, y:0, width:NW, height:NH, class:'node-rect', fill:'var(--surface-2)', stroke:color, 'stroke-width':'1.5' }));
+    // Color stripe
+    g.appendChild(el('rect', { x:0, y:0, width:5, height:NH, rx:3, fill:color }));
+    // Label
+    const label = n.label.length > 28 ? n.label.substring(0,26)+'..' : n.label;
+    const txt = el('text', { x:NW/2, y:NH/2 - 4, class:'node-label', 'text-anchor':'middle' });
+    txt.textContent = label;
+    g.appendChild(txt);
+    // Spec name
+    const specTxt = el('text', { x:NW/2, y:NH/2 + 10, class:'node-spec', 'text-anchor':'middle' });
+    specTxt.textContent = n.spec;
+    g.appendChild(specTxt);
+    // Events
+    g.onmouseenter = (e) => showTooltip(e, n);
+    g.onmouseleave = hideTooltip;
+    g.onclick = () => showDetail(n);
+    nodesG.appendChild(g);
+  });
+  svg.appendChild(nodesG);
+}
+
+function el(tag, attrs) {
+  const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  if (attrs) Object.entries(attrs).forEach(([k,v]) => e.setAttribute(k, v));
+  return e;
+}
+
+function showTooltip(ev, node) {
+  const tt = document.getElementById('tooltip');
+  tt.innerHTML = `<div class="tt-name">${node.label}</div><div class="tt-spec">${node.spec} &middot; ${node.actor}</div>`;
+  tt.style.display = 'block';
+  const r = tt.getBoundingClientRect();
+  let left = ev.clientX + 12, top = ev.clientY - 10;
+  if (left + r.width > window.innerWidth) left = ev.clientX - r.width - 12;
+  if (top + r.height > window.innerHeight) top = ev.clientY - r.height - 10;
+  tt.style.left = left + 'px';
+  tt.style.top = top + 'px';
+
+  // Highlight connected edges
+  const svg = document.getElementById('mainSvg');
+  const connectedEdges = new Set();
+  const connectedNodes = new Set([node.id]);
+  EDGES_BASE.forEach((edge, i) => {
+    if (edge.from === node.id || edge.to === node.id) {
+      connectedEdges.add(i);
+      connectedNodes.add(edge.from);
+      connectedNodes.add(edge.to);
+    }
+  });
+  svg.querySelectorAll('.node-group').forEach(g => {
+    g.classList.toggle('dimmed', !connectedNodes.has(g.getAttribute('data-id')));
+    g.classList.toggle('highlighted', g.getAttribute('data-id') === node.id);
+  });
+  svg.querySelectorAll('.edge-path').forEach(p => {
+    const idx = parseInt(p.getAttribute('data-edge-idx'));
+    p.classList.toggle('dimmed', !connectedEdges.has(idx));
+    p.classList.toggle('highlighted', connectedEdges.has(idx));
+  });
+  svg.querySelectorAll('.edge-label').forEach(l => {
+    const idx = parseInt(l.getAttribute('data-edge-idx'));
+    l.classList.toggle('dimmed', !connectedEdges.has(idx));
+  });
+}
+
+function hideTooltip() {
+  document.getElementById('tooltip').style.display = 'none';
+  const svg = document.getElementById('mainSvg');
+  svg.querySelectorAll('.dimmed').forEach(e => e.classList.remove('dimmed'));
+  svg.querySelectorAll('.highlighted').forEach(e => e.classList.remove('highlighted'));
+}
+
+function showDetail(node) {
+  const panel = document.getElementById('detailPanel');
+  const body = document.getElementById('detailBody');
+  const actions = document.getElementById('detailActions');
+  document.getElementById('detailTitle').textContent = node.label;
+  const color = SPEC_COLORS[node.spec] || '#8b949e';
+  const forkOv = (FORK_DATA[currentFork] || {})[node.id] || {};
+  const params = forkOv.params || node.params || '—';
+  const returns = forkOv.returns || node.returns || '—';
+
+  body.innerHTML = `
+    <div class="field">
+      <div class="field-label">Spec Origin</div>
+      <div class="field-value"><span class="spec-badge" style="color:${color};background:${color}22;border:1px solid ${color}44">${node.spec}</span></div>
+    </div>
+    <div class="field">
+      <div class="field-label">Actor / Swim Lane</div>
+      <div class="field-value">${node.actor}</div>
+    </div>
+    <div class="field">
+      <div class="field-label">Fork</div>
+      <div class="field-value">${currentFork.charAt(0).toUpperCase() + currentFork.slice(1)}</div>
+    </div>
+    <div class="field">
+      <div class="field-label">Parameters / Input</div>
+      <div class="field-value"><code>${esc(params)}</code></div>
+    </div>
+    <div class="field">
+      <div class="field-label">Returns / Output</div>
+      <div class="field-value"><code>${esc(returns)}</code></div>
+    </div>
+    <div class="field">
+      <div class="field-label">Description</div>
+      <div class="field-value">${node.desc || '—'}</div>
+    </div>
+    <div class="field">
+      <div class="field-label">GitHub</div>
+      <div class="field-value"><a href="${node.github}" target="_blank">${node.github}</a></div>
+    </div>
+  `;
+  const endpointName = node.label.replace(/V\d+$/, '');
+  actions.innerHTML = `<a href="index.html#/endpoint/${node.spec}/${node.label}">View in Explorer &rarr;</a>`;
+  panel.classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detailPanel').classList.remove('open');
+}
+
+function esc(s) { return s.replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// Close panel on Escape
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+
+// Initial render
+render();
+</script>
+</body>
+</html>
