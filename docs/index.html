@@ -623,6 +623,78 @@ a.type-link.syn-type:hover, a.type-link.syn-func:hover { text-decoration-style: 
 .footer { padding: 12px 16px; text-align: center; color: var(--text-dim); font-size: 12px; border-top: 1px solid var(--border); flex-shrink: 0; }
 .footer a { color: var(--text-muted); }
 .footer a:hover { color: var(--text); }
+
+/* PR tab styles */
+.pr-action-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+.pr-action-badge.added { background: rgba(63,185,80,0.15); color: var(--green); }
+.pr-action-badge.modified { background: rgba(210,153,34,0.15); color: var(--orange); }
+.pr-action-badge.removed { background: rgba(248,81,73,0.15); color: var(--red); }
+.pr-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.pr-header h2 { font-size: 16px; margin-bottom: 4px; }
+.pr-header .pr-meta { font-size: 13px; color: var(--text-muted); }
+.pr-sidebar-item {
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+.pr-sidebar-item:hover { background: var(--surface-2); }
+.pr-sidebar-item.active { background: var(--surface-2); border-left: 3px solid var(--accent); }
+.pr-sidebar-item .pr-num { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--accent); }
+.pr-sidebar-item .pr-title { font-size: 12px; color: var(--text); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-sidebar-item .pr-author { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.pr-sidebar-item .pr-stats { display: flex; gap: 6px; margin-top: 4px; }
+.pr-item-row {
+  padding: 8px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  transition: background 0.1s;
+}
+.pr-item-row:hover { background: var(--surface-2); }
+.pr-item-row.expanded { background: var(--surface-2); }
+.pr-item-row .pr-item-name { font-family: var(--font-mono); }
+.pr-item-row .pr-field-delta { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+.pr-item-preview {
+  display: none;
+  padding: 12px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.pr-item-preview .code-block { font-size: 11px; max-height: 400px; }
+.field-diff-added td { background: rgba(63,185,80,0.08); }
+.field-diff-removed td { background: rgba(248,81,73,0.08); }
+.pr-type-notice {
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.pr-type-notice a { font-family: var(--font-mono); }
+
+/* Inline diff highlighting */
+.diff-code-block { position: relative; }
+.diff-line-added { background: rgba(63,185,80,0.12); display: block; margin: 0 -12px; padding: 0 12px; border-left: 3px solid var(--green); }
+.diff-line-removed { background: rgba(248,81,73,0.12); display: block; margin: 0 -12px; padding: 0 12px; border-left: 3px solid var(--red); }
+.diff-line-changed { background: rgba(210,153,34,0.10); display: block; margin: 0 -12px; padding: 0 12px; border-left: 3px solid var(--orange); }
+.diff-line-unchanged { display: block; margin: 0 -12px; padding: 0 12px; border-left: 3px solid transparent; }
+.diff-word-added { background: rgba(63,185,80,0.25); border-radius: 2px; padding: 0 1px; }
+.diff-word-removed { background: rgba(248,81,73,0.25); border-radius: 2px; padding: 0 1px; text-decoration: line-through; }
 </style>
 </head>
 <body>
@@ -634,6 +706,7 @@ a.type-link.syn-type:hover, a.type-link.syn-func:hover { text-decoration-style: 
       <button class="nav-tab" data-route="#/types" onclick="navigate('#/types')">Types</button>
       <button class="nav-tab" data-route="#/endpoints" onclick="navigate('#/endpoints')">Endpoints</button>
       <button class="nav-tab" data-route="#/diff" onclick="navigate('#/diff')">Diff</button>
+      <button class="nav-tab" data-route="#/prs" onclick="navigate('#/prs')">PRs</button>
       <button class="nav-tab" onclick="window.location='visualizer.html'">Visualizer</button>
     </div>
     <div class="search-box">
@@ -791,6 +864,8 @@ function route() {
     document.querySelector('[data-route="#/endpoints"]').classList.add('active');
   } else if (hash.startsWith('#/diff')) {
     document.querySelector('[data-route="#/diff"]').classList.add('active');
+  } else if (hash.startsWith('#/prs')) {
+    document.querySelector('[data-route="#/prs"]').classList.add('active');
   }
 
   // Parse route
@@ -812,6 +887,8 @@ function route() {
     renderEndpointBrowser(main, parseParams(hash), null);
   } else if (hash.startsWith('#/diff')) {
     renderDiffView(main, parseParams(hash));
+  } else if (hash.startsWith('#/prs')) {
+    renderPRBrowser(main, parseParams(hash));
   } else {
     renderSpecsOverview(main);
   }
@@ -1261,6 +1338,18 @@ function typeFilterBtn(key, value, label, count, active) {
    VIEW 3: TYPE DETAIL
    ══════════════════════════════════════════════════════════════ */
 function getCodeForFork(item, fork) {
+  // PR fork resolution: if fork looks like 'pr-NNNN', check overlays
+  if (typeof fork === 'string' && fork.startsWith('pr-')) {
+    const prNum = fork.slice(3);
+    const overlays = catalog.pr_overlays || {};
+    for (const spec in overlays) {
+      const ov = overlays[spec][prNum];
+      if (ov && ov.items_changed && ov.items_changed[item.name] && ov.items_changed[item.name].code) {
+        return ov.items_changed[item.name].code;
+      }
+    }
+    return '';
+  }
   // Walk backward from this fork to find the last fork with code (carry-forward)
   // Use sortForksRaw so we can reach code in hidden forks (e.g. spurious_dragon)
   const forks = sortForksRaw(Object.keys(item.forks));
@@ -1269,6 +1358,81 @@ function getCodeForFork(item, fork) {
     if (item.forks[forks[i]] && item.forks[forks[i]].code) return item.forks[forks[i]].code;
   }
   return '';
+}
+
+
+// Line-level diff for side-by-side code comparison
+function computeLineDiff(oldLines, newLines) {
+  const m = oldLines.length, n = newLines.length;
+  // Build LCS table
+  const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (oldLines[i-1].trim() === newLines[j-1].trim()) dp[i][j] = dp[i-1][j-1] + 1;
+      else dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1]);
+    }
+  }
+  // Extract LCS matches (old->new index pairs)
+  const matches = [];
+  let i = m, j = n;
+  while (i > 0 && j > 0) {
+    if (oldLines[i-1].trim() === newLines[j-1].trim()) {
+      matches.unshift([i-1, j-1]); i--; j--;
+    } else if (dp[i-1][j] >= dp[i][j-1]) { i--; }
+    else { j--; }
+  }
+  // Build ops from LCS matches + gaps between them
+  const ops = [];
+  let oi = 0, ni = 0;
+  function processGap(oldEnd, newEnd) {
+    const og = [], ng = [];
+    while (oi < oldEnd) og.push(oi++);
+    while (ni < newEnd) ng.push(ni++);
+    const paired = Math.min(og.length, ng.length);
+    for (let k = 0; k < paired; k++) ops.push({ type: 'change', oldIdx: og[k], newIdx: ng[k] });
+    for (let k = paired; k < og.length; k++) ops.push({ type: 'remove', oldIdx: og[k] });
+    for (let k = paired; k < ng.length; k++) ops.push({ type: 'add', newIdx: ng[k] });
+  }
+  for (const [mi, mj] of matches) {
+    processGap(mi, mj);
+    ops.push({ type: 'equal', oldIdx: mi, newIdx: mj });
+    oi = mi + 1; ni = mj + 1;
+  }
+  processGap(m, n);
+  return ops;
+}
+
+// Render side-by-side code with inline diff highlighting
+function renderDiffCodeBlocks(oldCode, newCode, oldLabel, newLabel) {
+  const oldLines = oldCode.split('\n');
+  const newLines = newCode.split('\n');
+  const ops = computeLineDiff(oldLines, newLines);
+
+  let leftHtml = '', rightHtml = '';
+  ops.forEach(op => {
+    if (op.type === 'equal') {
+      const hl = highlightPython(oldLines[op.oldIdx]);
+      leftHtml += '<span class="diff-line-unchanged">' + hl + '\n</span>';
+      rightHtml += '<span class="diff-line-unchanged">' + highlightPython(newLines[op.newIdx]) + '\n</span>';
+    } else if (op.type === 'remove') {
+      leftHtml += '<span class="diff-line-removed">' + highlightPython(oldLines[op.oldIdx]) + '\n</span>';
+      rightHtml += '<span class="diff-line-unchanged" style="opacity:0.3">\n</span>';
+    } else if (op.type === 'add') {
+      leftHtml += '<span class="diff-line-unchanged" style="opacity:0.3">\n</span>';
+      rightHtml += '<span class="diff-line-added">' + highlightPython(newLines[op.newIdx]) + '\n</span>';
+    } else if (op.type === 'change') {
+      leftHtml += '<span class="diff-line-removed">' + highlightPython(oldLines[op.oldIdx]) + '\n</span>';
+      rightHtml += '<span class="diff-line-added">' + highlightPython(newLines[op.newIdx]) + '\n</span>';
+    }
+  });
+
+  let html = '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+  html += '<div style="flex:1;min-width:280px"><div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">' + oldLabel + '</div>';
+  html += '<pre class="code-block diff-code-block" style="max-height:400px;font-size:11px">' + leftHtml + '</pre></div>';
+  html += '<div style="flex:1;min-width:280px"><div style="font-size:10px;color:var(--green);margin-bottom:4px">' + newLabel + '</div>';
+  html += '<pre class="code-block diff-code-block" style="max-height:400px;font-size:11px">' + rightHtml + '</pre></div>';
+  html += '</div>';
+  return html;
 }
 
 function highlightPython(code) {
@@ -1357,6 +1521,23 @@ function renderTypeDetailContent(selectedSpec, name) {
   if (item.domain) html += '<span class="badge-spec">' + esc(item.domain) + '</span>';
   if (item.introduced) html += forkBadge(item.introduced, 'new');
   html += '</div></div>';
+
+  // PRs affecting this type
+  const affectingPRs = findPRsForType(name);
+  if (affectingPRs.length) {
+    html += '<div class="pr-type-notice">';
+    html += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">PRs affecting this type:</div>';
+    affectingPRs.forEach(pr => {
+      const actionColor = pr.action === 'added' ? 'var(--green)' : pr.action === 'removed' ? 'var(--red)' : 'var(--orange)';
+      html += '<div style="margin-top:2px">';
+      html += '<a href="#/prs?pr=' + pr.number + '&item=' + encodeURIComponent(name) + '" style="color:var(--accent)">';
+      html += 'PR #' + pr.number + ': ' + esc(pr.title);
+      html += '</a>';
+      html += ' <span style="color:' + actionColor + ';font-size:11px">(' + esc(pr.summary) + ')</span>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
 
   // GitHub + EIPs row
   const latestData = item.forks[latestFork] || {};
@@ -1875,6 +2056,339 @@ function renderEndpointDetailContent(spec, key) {
 /* ══════════════════════════════════════════════════════════════
    VIEW 6: FORK DIFF
    ══════════════════════════════════════════════════════════════ */
+
+/* ══════════════════════════════════════════════════════════════
+   VIEW: PR BROWSER
+   ══════════════════════════════════════════════════════════════ */
+
+function getAllPRs() {
+  const prs = [];
+  const overlays = catalog.pr_overlays || {};
+  for (const spec in overlays) {
+    for (const prId in overlays[spec]) {
+      const ov = overlays[spec][prId];
+      const items = ov.items_changed || {};
+      const counts = { added: 0, modified: 0, removed: 0 };
+      for (const name in items) {
+        const a = items[name].action;
+        if (counts[a] !== undefined) counts[a]++;
+      }
+      prs.push({
+        spec,
+        prId,
+        number: ov.number,
+        title: ov.title,
+        author: ov.author,
+        url: ov.url,
+        itemCount: Object.keys(items).length,
+        constCount: Object.keys(ov.constants_changed || {}).length,
+        counts,
+        overlay: ov
+      });
+    }
+  }
+  prs.sort((a, b) => b.number - a.number);
+  return prs;
+}
+
+function renderPRBrowser(container, params) {
+  const allPRs = getAllPRs();
+  const selectedPR = params.pr || '';
+  const expandItem = params.item || '';
+
+  if (!allPRs.length) {
+    container.innerHTML = '<div class="panel-full"><div class="empty-state"><div class="icon">📋</div><div>No PR overlays indexed.</div><div style="font-size:12px;color:var(--text-dim)">Use the MCP <code>index_pr</code> tool to index a spec PR.</div></div></div>';
+    return;
+  }
+
+  let html = '<div class="panel-sidebar" style="width:300px;min-width:300px">';
+  html += '<div style="padding:12px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-muted)">';
+  html += allPRs.length + ' indexed PR' + (allPRs.length !== 1 ? 's' : '');
+  html += '</div>';
+
+  allPRs.forEach(pr => {
+    const isActive = String(pr.number) === String(selectedPR);
+    html += '<div class="pr-sidebar-item' + (isActive ? ' active' : '') + '" onclick="navigate(\'#/prs?pr=' + pr.number + '\')">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+    html += '<span class="pr-num">#' + pr.number + '</span>';
+    html += specBadge(pr.spec);
+    html += '</div>';
+    html += '<div class="pr-title">' + esc(pr.title) + '</div>';
+    html += '<div class="pr-author">by ' + esc(pr.author) + '</div>';
+    html += '<div class="pr-stats">';
+    if (pr.counts.added) html += '<span class="pr-action-badge added">+' + pr.counts.added + '</span>';
+    if (pr.counts.modified) html += '<span class="pr-action-badge modified">~' + pr.counts.modified + '</span>';
+    if (pr.counts.removed) html += '<span class="pr-action-badge removed">-' + pr.counts.removed + '</span>';
+    html += '</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  // Detail panel
+  html += '<div class="panel-detail" style="flex:1;overflow-y:auto">';
+
+  if (!selectedPR) {
+    html += '<div class="empty-state"><div class="icon">👈</div><div>Select a PR to view changes</div></div>';
+  } else {
+    const pr = allPRs.find(p => String(p.number) === String(selectedPR));
+    if (!pr) {
+      html += '<div class="empty-state"><div class="icon">❓</div><div>PR #' + esc(selectedPR) + ' not found</div></div>';
+    } else {
+      html += renderPRDetail(pr, expandItem);
+    }
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+
+  // Auto-expand item if specified
+  if (expandItem && selectedPR) {
+    setTimeout(function() {
+      const itemEl = document.getElementById('pr-item-' + expandItem.replace(/[^a-zA-Z0-9]/g, '_'));
+      if (itemEl) {
+        itemEl.click();
+        itemEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 50);
+  }
+}
+
+function renderPRDetail(pr, expandItem) {
+  const ov = pr.overlay;
+  const items = ov.items_changed || {};
+
+  let html = '<div class="pr-header">';
+  html += '<h2>PR #' + pr.number + ': ' + esc(pr.title) + '</h2>';
+  html += '<div class="pr-meta">';
+  html += 'by ' + esc(pr.author) + ' · ';
+  html += specBadge(pr.spec) + ' · ';
+  html += pr.itemCount + ' item' + (pr.itemCount !== 1 ? 's' : '');
+  if (pr.constCount) html += ' · ' + pr.constCount + ' constant' + (pr.constCount !== 1 ? 's' : '');
+  html += ' &nbsp;';
+  html += '<a href="' + esc(pr.url) + '" target="_blank" rel="noopener" style="color:var(--accent)">View on GitHub ↗</a>';
+  html += '</div></div>';
+
+  // Group items by action
+  const groups = { added: [], modified: [], removed: [] };
+  for (const name in items) {
+    const action = items[name].action;
+    if (groups[action]) groups[action].push(name);
+    else groups.modified.push(name); // fallback
+  }
+  // Sort each group alphabetically
+  for (const g in groups) groups[g].sort();
+
+  if (groups.added.length) {
+    html += '<div class="diff-group">';
+    html += '<h3 style="color:var(--green)">✚ Added <span class="count-badge" style="background:rgba(63,185,80,0.15);color:var(--green)">' + groups.added.length + '</span></h3>';
+    groups.added.forEach(name => {
+      html += renderPRItemRow(name, items[name], pr, 'added');
+    });
+    html += '</div>';
+  }
+
+  if (groups.modified.length) {
+    html += '<div class="diff-group">';
+    html += '<h3 style="color:var(--orange)">✎ Modified <span class="count-badge" style="background:rgba(210,153,34,0.15);color:var(--orange)">' + groups.modified.length + '</span></h3>';
+    groups.modified.forEach(name => {
+      html += renderPRItemRow(name, items[name], pr, 'modified');
+    });
+    html += '</div>';
+  }
+
+  if (groups.removed.length) {
+    html += '<div class="diff-group">';
+    html += '<h3 style="color:var(--red)">✖ Removed <span class="count-badge" style="background:rgba(248,81,73,0.15);color:var(--red)">' + groups.removed.length + '</span></h3>';
+    groups.removed.forEach(name => {
+      html += renderPRItemRow(name, items[name], pr, 'removed');
+    });
+    html += '</div>';
+  }
+
+  return html;
+}
+
+function renderPRItemRow(name, item, pr, action) {
+  const safeId = name.replace(/[^a-zA-Z0-9]/g, '_');
+  const previewId = 'pr-preview-' + safeId;
+  const hasContent = item.code || (action === 'removed' && catalog.items[name]);
+
+  let html = '<div class="pr-item-row" id="pr-item-' + safeId + '"';
+  if (hasContent) {
+    html += ' onclick="togglePRPreview(this, \'' + esc(name) + '\', ' + pr.number + ', \'' + esc(pr.spec) + '\')"';
+  }
+  html += '>';
+
+  // Action prefix
+  const prefixMap = { added: '+', modified: '~', removed: '-' };
+  const colorMap = { added: 'var(--green)', modified: 'var(--orange)', removed: 'var(--red)' };
+  html += '<span style="color:' + colorMap[action] + ';font-family:var(--font-mono);width:14px;flex-shrink:0">' + prefixMap[action] + '</span>';
+
+  // Name (strikethrough for removed)
+  const nameStyle = action === 'removed' ? 'text-decoration:line-through;color:var(--red)' : '';
+  html += '<span class="pr-item-name" style="' + nameStyle + '">' + esc(name) + '</span>';
+
+  // Kind badge
+  if (item.kind) html += kindBadge(item.kind);
+
+  // Domain
+  if (item.domain) html += '<span style="font-size:11px;color:var(--text-dim)">' + esc(item.domain) + '</span>';
+
+  // Field delta for modified items
+  if (action === 'modified' && item.diff_summary) {
+    const ds = item.diff_summary;
+    const parts = [];
+    if (ds.fields_added && ds.fields_added.length) parts.push('+' + ds.fields_added.length + ' field');
+    if (ds.fields_removed && ds.fields_removed.length) parts.push('-' + ds.fields_removed.length + ' field');
+    if (ds.fields_modified && ds.fields_modified.length) parts.push('~' + ds.fields_modified.length + ' field');
+    if (parts.length) {
+      html += '<span class="pr-field-delta">' + parts.join(', ') + '</span>';
+    }
+  }
+
+  // Expand indicator
+  if (hasContent) html += '<span style="color:var(--text-dim);font-size:10px;margin-left:auto;flex-shrink:0">▶</span>';
+
+  html += '</div>';
+  html += '<div class="pr-item-preview" id="' + previewId + '"></div>';
+  return html;
+}
+
+function togglePRPreview(el, name, prNumber, specName) {
+  const safeId = name.replace(/[^a-zA-Z0-9]/g, '_');
+  const preview = document.getElementById('pr-preview-' + safeId);
+  if (!preview) return;
+
+  if (preview.style.display !== 'none' && preview.style.display !== '') {
+    preview.style.display = 'none';
+    el.classList.remove('expanded');
+    const arrow = el.querySelector('span:last-child');
+    if (arrow && arrow.textContent === '▼') arrow.textContent = '▶';
+    return;
+  }
+
+  el.classList.add('expanded');
+  preview.style.display = 'block';
+  const arrow = el.querySelector('span:last-child');
+  if (arrow && arrow.textContent === '▶') arrow.textContent = '▼';
+
+  // Get PR overlay data
+  const overlays = catalog.pr_overlays || {};
+  const specOverlays = overlays[specName] || {};
+  const overlay = specOverlays[String(prNumber)];
+  if (!overlay) { preview.innerHTML = '<div style="padding:8px;color:var(--text-dim)">Overlay not found.</div>'; return; }
+
+  const prItem = overlay.items_changed[name];
+  if (!prItem) { preview.innerHTML = '<div style="padding:8px;color:var(--text-dim)">Item not found in overlay.</div>'; return; }
+
+  const action = prItem.action;
+  let ph = '';
+
+  // Meta line
+  const meta = [];
+  if (prItem.kind) meta.push(prItem.kind);
+  if (prItem.domain) meta.push(prItem.domain);
+  if (prItem.fork) meta.push(prItem.fork);
+  const mainItem = catalog.items[name];
+  ph += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">' + meta.join(' · ');
+  if (mainItem) ph += ' <a href="#/type/' + encodeURIComponent(name) + '" style="color:var(--accent);font-size:10px" onclick="event.stopPropagation()">open type →</a>';
+  if (prItem.github_url) ph += ' <a href="' + esc(prItem.github_url) + '" target="_blank" rel="noopener" style="color:var(--text-muted);font-size:10px" onclick="event.stopPropagation()">source ↗</a>';
+  ph += '</div>';
+
+  if (action === 'modified') {
+    // Side-by-side code diff
+    const prCode = prItem.code || '';
+    const mainCode = mainItem ? getCodeForFork(mainItem, prItem.fork || '') : '';
+
+    if (prCode && mainCode && prCode !== mainCode) {
+      ph += renderDiffCodeBlocks(mainCode, prCode, 'mainline (' + esc(prItem.fork || '') + ')', 'PR #' + prNumber);
+    } else if (prCode) {
+      ph += '<pre class="code-block" style="max-height:400px;font-size:11px">' + highlightPython(prCode) + '</pre>';
+    } else {
+      ph += '<div style="padding:8px;color:var(--text-dim);font-size:12px">Code changed but no definition available.</div>';
+    }
+
+    // Field diff table
+    const ds = prItem.diff_summary;
+    if (ds && (ds.fields_added && ds.fields_added.length || ds.fields_removed && ds.fields_removed.length || ds.fields_modified && ds.fields_modified.length)) {
+      ph += '<table class="data-table" style="margin-top:8px;font-size:12px"><thead><tr><th>Field</th><th>Change</th></tr></thead><tbody>';
+      if (ds.fields_added) ds.fields_added.forEach(f => {
+        ph += '<tr class="field-diff-added"><td style="color:var(--green)">+ ' + esc(f) + '</td><td>added</td></tr>';
+      });
+      if (ds.fields_removed) ds.fields_removed.forEach(f => {
+        ph += '<tr class="field-diff-removed"><td style="color:var(--red)">- ' + esc(f) + '</td><td>removed</td></tr>';
+      });
+      if (ds.fields_modified) ds.fields_modified.forEach(f => {
+        ph += '<tr><td style="color:var(--orange)">~ ' + esc(f) + '</td><td>modified</td></tr>';
+      });
+      ph += '</tbody></table>';
+    }
+
+  } else if (action === 'added') {
+    // New item: single code block
+    if (prItem.code) {
+      ph += '<pre class="code-block" style="max-height:400px;font-size:11px">' + highlightPython(prItem.code) + '</pre>';
+    }
+    // Fields table
+    if (prItem.fields && prItem.fields.length) {
+      ph += '<table class="data-table" style="margin-top:8px;font-size:12px"><thead><tr><th>Field</th><th>Type</th></tr></thead><tbody>';
+      prItem.fields.forEach(f => {
+        ph += '<tr><td>' + esc(f.name) + '</td><td>' + typeLink(f.type, specName) + '</td></tr>';
+      });
+      ph += '</tbody></table>';
+    }
+
+  } else if (action === 'removed') {
+    // Show mainline code being removed
+    if (mainItem) {
+      const removedCode = getCodeForFork(mainItem, prItem.fork || '');
+      if (removedCode) {
+        ph += '<div style="font-size:10px;color:var(--red);margin-bottom:4px">Removed definition:</div>';
+        ph += '<pre class="code-block" style="max-height:400px;font-size:11px;opacity:0.7;border-color:rgba(248,81,73,0.3)">' + highlightPython(removedCode) + '</pre>';
+      }
+    } else {
+      ph += '<div style="padding:8px;color:var(--text-dim);font-size:12px">Removed (no mainline definition available).</div>';
+    }
+  }
+
+  // References
+  if (prItem.references && prItem.references.length) {
+    ph += '<div style="margin-top:8px;font-size:11px;color:var(--text-muted)">refs: ';
+    prItem.references.forEach((ref, i) => {
+      ph += typeLink(ref, specName);
+      if (i < prItem.references.length - 1) ph += ', ';
+    });
+    ph += '</div>';
+  }
+
+  preview.innerHTML = ph;
+}
+
+function findPRsForType(typeName) {
+  const results = [];
+  const overlays = catalog.pr_overlays || {};
+  for (const spec in overlays) {
+    for (const prId in overlays[spec]) {
+      const ov = overlays[spec][prId];
+      if (ov.items_changed && ov.items_changed[typeName]) {
+        const item = ov.items_changed[typeName];
+        const ds = item.diff_summary || {};
+        let summary = item.action;
+        if (ds.fields_added && ds.fields_added.length) summary += ', +' + ds.fields_added.length + ' field';
+        if (ds.fields_removed && ds.fields_removed.length) summary += ', -' + ds.fields_removed.length + ' field';
+        results.push({
+          number: ov.number,
+          title: ov.title,
+          action: item.action,
+          summary: summary,
+          spec: spec
+        });
+      }
+    }
+  }
+  return results;
+}
+
 function renderDiffView(container, params) {
   const specName = params.spec || Object.keys(catalog.specs)[0];
   const specData = catalog.specs[specName];
@@ -1910,10 +2424,76 @@ function renderDiffView(container, params) {
     const disabled = i <= fromIdx;
     html += '<option value="' + esc(f) + '"' + (f === toFork ? ' selected' : '') + (disabled ? ' disabled style="color:var(--text-dim)"' : '') + '>' + esc(f) + '</option>';
   });
+  // Add PR forks as options
+  const prOverlays = (catalog.pr_overlays || {})[specName] || {};
+  const prIds = Object.keys(prOverlays);
+  if (prIds.length) {
+    html += '<option disabled>──── PRs ────</option>';
+    prIds.forEach(prId => {
+      const pov = prOverlays[prId];
+      const prFork = 'pr-' + pov.number;
+      const label = 'PR #' + pov.number + ': ' + (pov.title || '').slice(0, 40) + (pov.title && pov.title.length > 40 ? '...' : '');
+      html += '<option value="' + esc(prFork) + '"' + (prFork === toFork ? ' selected' : '') + '>' + esc(label) + '</option>';
+    });
+  }
   html += '</select>';
   html += '</div>';
 
   // Compute diff
+  // Handle PR forks
+  if (toFork.startsWith('pr-')) {
+    const prNum = toFork.slice(3);
+    const prOv = ((catalog.pr_overlays || {})[specName] || {})[prNum];
+    if (prOv && prOv.items_changed) {
+      const prItems = prOv.items_changed;
+      const groups = { added: [], modified: [], removed: [] };
+      for (const n in prItems) {
+        const a = prItems[n].action;
+        if (groups[a]) groups[a].push(n);
+      }
+      for (const g in groups) groups[g].sort();
+
+      html += '<div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">';
+      html += '<a href="' + esc(prOv.url || '') + '" target="_blank" rel="noopener" style="color:var(--accent)">PR #' + prNum + '</a>: ' + esc(prOv.title || '') + ' by ' + esc(prOv.author || '');
+      html += '</div>';
+
+      if (groups.added.length) {
+        html += '<div class="diff-group"><h3 style="color:var(--green)">✚ Added <span class="count-badge" style="background:rgba(63,185,80,0.15);color:var(--green)">' + groups.added.length + '</span></h3>';
+        groups.added.forEach(n => {
+          const itemId = 'diff-preview-' + n.replace(/[^a-zA-Z0-9]/g, '_');
+          html += '<div class="diff-item" onclick="toggleDiffPreview(this, \'' + esc(n) + '\', \'' + esc(toFork) + '\', \'' + esc(specName) + '\', null)" style="color:var(--green)">+ ' + esc(n) + '</div>';
+          html += '<div class="diff-item-preview" id="' + itemId + '" style="display:none"></div>';
+        });
+        html += '</div>';
+      }
+      if (groups.modified.length) {
+        html += '<div class="diff-group"><h3 style="color:var(--orange)">✎ Modified <span class="count-badge" style="background:rgba(210,153,34,0.15);color:var(--orange)">' + groups.modified.length + '</span></h3>';
+        groups.modified.forEach(n => {
+          const itemId = 'diff-preview-' + n.replace(/[^a-zA-Z0-9]/g, '_');
+          html += '<div class="diff-item" onclick="toggleDiffPreview(this, \'' + esc(n) + '\', \'' + esc(toFork) + '\', \'' + esc(specName) + '\', \'' + esc(fromFork) + '\')" style="color:var(--orange)">~ ' + esc(n) + '</div>';
+          html += '<div class="diff-item-preview" id="' + itemId + '" style="display:none"></div>';
+        });
+        html += '</div>';
+      }
+      if (groups.removed.length) {
+        html += '<div class="diff-group"><h3 style="color:var(--red)">✖ Removed <span class="count-badge" style="background:rgba(248,81,73,0.15);color:var(--red)">' + groups.removed.length + '</span></h3>';
+        groups.removed.forEach(n => {
+          const itemId = 'diff-preview-' + n.replace(/[^a-zA-Z0-9]/g, '_');
+          html += '<div class="diff-item" style="color:var(--red);text-decoration:line-through">- ' + esc(n) + '</div>';
+          html += '<div class="diff-item-preview" id="' + itemId + '" style="display:none"></div>';
+        });
+        html += '</div>';
+      }
+
+      if (!groups.added.length && !groups.modified.length && !groups.removed.length) {
+        html += '<div style="color:var(--text-dim);font-size:13px;margin-top:20px">No changes in this PR.</div>';
+      }
+    } else {
+      html += '<div style="color:var(--text-dim);font-size:13px;margin-top:20px">PR overlay not found.</div>';
+    }
+  } else {
+
+  // Standard fork diff
   const forkSummary = specData && specData.fork_summary;
   if (forkSummary && forkSummary[toFork]) {
     const fs = forkSummary[toFork];
@@ -1995,6 +2575,7 @@ function renderDiffView(container, params) {
   }
 
   html += '</div>';
+  } // close PR else block
   container.innerHTML = html;
 }
 
@@ -2017,6 +2598,21 @@ function toggleDiffPreview(el, name, toFork, specName, fromFork) {
   // Build preview content
   const item = catalog.items[name];
   if (!item) {
+    // Check if it's a PR-only item
+    if (toFork && toFork.startsWith('pr-')) {
+      const prNum = toFork.slice(3);
+      const overlays = catalog.pr_overlays || {};
+      for (const spec in overlays) {
+        const ov = overlays[spec][prNum];
+        if (ov && ov.items_changed && ov.items_changed[name] && ov.items_changed[name].code) {
+          const prItem = ov.items_changed[name];
+          let prHtml = '<div class="diff-preview-meta">' + (prItem.kind || '') + ' · ' + (prItem.domain || '') + '</div>';
+          prHtml += '<pre class="code-block" style="max-height:400px;font-size:11px">' + highlightPython(prItem.code) + '</pre>';
+          preview.innerHTML = prHtml;
+          return;
+        }
+      }
+    }
     preview.innerHTML = '<div style="padding:8px;color:var(--text-dim);font-size:12px">Type not found in catalog.</div>';
     return;
   }
@@ -2037,12 +2633,7 @@ function toggleDiffPreview(el, name, toFork, specName, fromFork) {
     // Modified item: show from-code and to-code side by side or stacked
     const fromCode = getCodeForFork(item, fromFork);
     if (fromCode && fromCode !== toCode) {
-      ph += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
-      ph += '<div style="flex:1;min-width:280px"><div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">' + esc(fromFork) + '</div>';
-      ph += '<pre class="code-block" style="max-height:400px;font-size:11px">' + highlightPython(fromCode) + '</pre></div>';
-      ph += '<div style="flex:1;min-width:280px"><div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">' + esc(toFork) + '</div>';
-      ph += '<pre class="code-block" style="max-height:400px;font-size:11px">' + highlightPython(toCode) + '</pre></div>';
-      ph += '</div>';
+      ph += renderDiffCodeBlocks(fromCode, toCode, esc(fromFork), esc(toFork));
     } else {
       // Same code or no from-code, just show the target
       ph += '<pre class="code-block" style="max-height:400px;font-size:11px">' + highlightPython(toCode) + '</pre>';
