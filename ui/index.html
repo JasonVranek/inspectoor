@@ -684,7 +684,7 @@ let searchQuery = '';
 
 // Persistent filter state (survives item selection)
 let typeFilters = { spec: '', kind: '', domain: '' };
-let epFilters = { spec: '', method: '', domain: '' };
+let epFilters = { spec: '', method: '', domain: '', group: '' };
 
 const SPEC_COLORS = {
   'consensus-specs': 'spec-consensus-specs',
@@ -1491,6 +1491,7 @@ function renderTypeDetailContent(selectedSpec, name) {
    ══════════════════════════════════════════════════════════════ */
 function setEpFilter(key, value) {
   epFilters[key] = value;
+  if (key === 'spec') epFilters.group = '';
   route();
 }
 
@@ -1499,10 +1500,12 @@ function renderEndpointBrowser(container, params, selected) {
     if (params.spec) epFilters.spec = params.spec;
     if (params.method) epFilters.method = params.method;
     if (params.domain) epFilters.domain = params.domain;
+    if (params.group) epFilters.group = params.group;
   }
   const filterSpec = epFilters.spec;
   const filterMethod = epFilters.method;
   const filterDomain = epFilters.domain;
+  const filterGroup = epFilters.group;
 
   // Facets
   const specs = {}, methods = {}, domains = {};
@@ -1512,10 +1515,33 @@ function renderEndpointBrowser(container, params, selected) {
     if (ep.domain) domains[ep.domain] = (domains[ep.domain]||0) + 1;
   });
 
+  // Compute path-prefix groups for the selected spec
+  function epGroup(ep) {
+    var p = ep.path || ep._key || '';
+    // REST APIs: extract version segment (e.g. /eth/v1/... -> v1)
+    var vm = p.match(/^\/[^/]+\/(v\d+)\//);
+    if (vm) return vm[1];
+    // JSON-RPC methods: extract namespace prefix (e.g. engine_foo -> engine)
+    var nm = p.match(/^([a-z]+)_/);
+    if (nm) return nm[1];
+    return '';
+  }
+
+  // Only compute groups within current spec filter
+  const groups = {};
+  if (filterSpec) {
+    allEndpoints.forEach(function(ep) {
+      if (ep._spec !== filterSpec) return;
+      var g = epGroup(ep);
+      if (g) groups[g] = (groups[g] || 0) + 1;
+    });
+  }
+
   let filtered = allEndpoints.filter(ep => {
     if (filterSpec && ep._spec !== filterSpec) return false;
     if (filterMethod && ep.method !== filterMethod) return false;
     if (filterDomain && ep.domain !== filterDomain) return false;
+    if (filterGroup && epGroup(ep) !== filterGroup) return false;
     if (searchQuery) {
       const pathMatch = fuzzyScore(ep.path, searchQuery);
       const sumMatch = ep.summary ? fuzzyScore(ep.summary, searchQuery) : null;
@@ -1543,18 +1569,11 @@ function renderEndpointBrowser(container, params, selected) {
   }
   sideHtml += '</div>';
 
-  sideHtml += '<div class="sidebar-section"><h3>Method</h3>';
-  sideHtml += epFilterBtn('', 'All', '', filterMethod === '', 'method');
-  for (const [m,c] of Object.entries(methods).sort()) {
-    sideHtml += epFilterBtn(m, m, c, filterMethod === m, 'method');
-  }
-  sideHtml += '</div>';
-
-  if (Object.keys(domains).length > 1) {
-    sideHtml += '<div class="sidebar-section"><h3>Domain</h3>';
-    sideHtml += epFilterBtn('', 'All', '', filterDomain === '', 'domain');
-    for (const [d,c] of Object.entries(domains).sort((a,b)=>b[1]-a[1])) {
-      if (d) sideHtml += epFilterBtn(d, d, c, filterDomain === d, 'domain');
+  if (Object.keys(groups).length > 1) {
+    sideHtml += '<div class="sidebar-section"><h3>Group</h3>';
+    sideHtml += epFilterBtn('', 'All', '', filterGroup === '', 'group');
+    for (const [g,cnt] of Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0]))) {
+      sideHtml += epFilterBtn(g, g, cnt, filterGroup === g, 'group');
     }
     sideHtml += '</div>';
   }
