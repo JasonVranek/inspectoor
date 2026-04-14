@@ -3,15 +3,15 @@
 The Inspectoor MCP Server.
 
 Serves Ethereum spec data over MCP (Model Context Protocol).
-Loads pre-built indexes on startup, answers structured queries
+Loads a pre-built catalog.json on startup, answers structured queries
 about types, functions, constants, endpoints, and cross-spec references.
 
 Usage:
     # stdio transport (for agent integration)
     python3 server.py
 
-    # With custom indexes directory
-    python3 server.py --indexes-dir /path/to/indexes
+    # With custom catalog path
+    python3 server.py --catalog docs/catalog.json
 
     # Rebuild indexes before starting (requires repo paths)
     python3 server.py --rebuild --repos-dir /path/to/repos
@@ -31,89 +31,77 @@ from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
 
-# ── Index Store ────────────────────────────────────────────────────────────
+# ── Catalog Store ──────────────────────────────────────────────────────────
 
 class SpecStore:
-    """In-memory store for all spec indexes and cross-references."""
+    """In-memory store backed by catalog.json -- the single source of truth
+    shared with the explorer UI."""
 
     def __init__(self):
-        self.indexes: dict = {}       # spec_name -> index data
-        self.cross_refs: dict = {}    # cross-spec reference data
-        self.type_map: dict = {}      # unified type map
-        self.all_items: dict = {}     # flat: name -> (spec, item)
-        self.all_endpoints: dict = {} # flat: key -> (spec, endpoint)
+        self.catalog: dict = {}
+        self.items: dict = {}             # name -> item (already merged/deduped)
+        self.specs: dict = {}             # spec_name -> spec data
+        self.type_map: dict = {}          # name -> canonical source info
+        self.cross_refs: dict = {}        # cross-spec references
+        self.all_endpoints: dict = {}     # ep_key -> (spec_name, endpoint)
 
-    def load(self, indexes_dir: str):
-        """Load all indexes from disk."""
-        indexes_path = Path(indexes_dir)
-        if not indexes_path.is_dir():
-            raise FileNotFoundError(f"Indexes directory not found: {indexes_dir}")
+    def load(self, catalog_path: str):
+        """Load the unified catalog."""
+        with open(catalog_path) as f:
+            self.catalog = json.load(f)
 
-        self.indexes = {}
-        for path in sorted(indexes_path.glob("*_index.json")):
-            with open(path) as f:
-                data = json.load(f)
-            name = path.stem.replace("_index", "")
-            self.indexes[name] = data
+        self.items = self.catalog.get("items", {})
+        self.specs = self.catalog.get("specs", {})
+        self.type_map = self.catalog.get("type_map", {})
+        self.cross_refs = self.catalog.get("cross_refs", {})
 
-        # Load cross-refs if available
-        xref_path = indexes_path / "_cross_refs.json"
-        if xref_path.exists():
-            with open(xref_path) as f:
-                self.cross_refs = json.load(f)
-            self.type_map = self.cross_refs.get("type_map", {})
-
-        # Build flat indexes for fast lookup
-        self._build_flat_indexes()
-
-    def _build_flat_indexes(self):
-        """Build flat lookup tables across all specs."""
-        self.all_items = {}
+        # Build flat endpoint index
         self.all_endpoints = {}
-
-        for spec_name, data in self.indexes.items():
-            for item_name, item in data.get("items", {}).items():
-                # First spec to define it wins (canonical source)
-                if item_name not in self.all_items:
-                    self.all_items[item_name] = (spec_name, item)
-
-            for ep_key, endpoint in data.get("endpoints", {}).items():
+        for spec_name, spec_data in self.specs.items():
+            for ep_key, endpoint in spec_data.get("endpoints", {}).items():
                 self.all_endpoints[ep_key] = (spec_name, endpoint)
 
     def specs_summary(self) -> list:
         """Return summary of loaded specs."""
         result = []
-        for name, data in self.indexes.items():
-            meta = data.get("_meta", {})
+        for name, spec_data in self.specs.items():
+            meta = spec_data.get("meta", {})
             result.append({
                 "name": name,
-                "source": meta.get("source", ""),
+                "source": meta.get("repo", ""),
                 "items": meta.get("total_items", 0),
-                "constants": meta.get("total_constants", 0),
-                "endpoints": len(data.get("endpoints", {})),
+                "constants": len(spec_data.get("constants", {})),
+                "endpoints": len(spec_data.get("endpoints", {})),
                 "forks": meta.get("fork_order", []),
             })
         return result
 
     def lookup_type(self, name: str, fork: Optional[str] = None, spec: Optional[str] = None) -> Optional[dict]:
         """Look up a type/function/item by name."""
-        # Search in specific spec or across all
-        if spec and spec in self.indexes:
-            item = self.indexes[spec].get("items", {}).get(name)
-            if item:
-                return self._format_item(name, spec, item, fork)
-        elif name in self.all_items:
-            spec_name, item = self.all_items[name]
-            return self._format_item(name, spec_name, item, fork)
+        item = None
 
-        # Fuzzy search fallback
-        matches = self._fuzzy_match(name, list(self.all_items.keys()), limit=5)
-        if matches:
-            return {"error": f"Type '{name}' not found", "suggestions": matches}
-        return {"error": f"Type '{name}' not found"}
+        if spec:
+            # Filter to items whose primary or secondary spec matches
+            candidate = self.items.get(name)
+            if candidate and spec in candidate.get("specs", []):
+                item = candidate
+        else:
+            item = self.items.get(name)
 
-    def _format_item(self, name: str, spec_name: str, item: dict, fork: Optional[str] = None) -> dict:
-        """Format an item for output, optionally filtered to a fork."""
+        if not item:
+            # Fuzzy fallback
+            matches = self._fuzzy_match(name, list(self.items.keys()), limit=5)
+            if matches:
+                return {"error": f"Type '{name}' not found", "suggestions": matches}
+            return {"error": f"Type '{name}' not found"}
+
+        return self._format_item(item, fork)
+
+    def _format_item(self, item: dict, fork: Optional[str] = None) -> dict:
+        """Format an item for output."""
+        name = item["name"]
+        spec_name = item.get("spec", "")
+
         result = {
             "name": name,
             "spec": spec_name,
@@ -124,55 +112,73 @@ class SpecStore:
             "forks_available": list(item.get("forks", {}).keys()),
         }
 
-        # Cross-spec info
+        # Canonical source from type_map
         if name in self.type_map:
             result["canonical_source"] = self.type_map[name]["source"]
 
-        # Dependents
-        for spec_data in self.indexes.values():
-            refs = spec_data.get("_references", {})
+        # Reverse references (who uses this type)
+        used_by = []
+        for sname, sdata in self.specs.items():
+            refs = sdata.get("references", {})
             if name in refs:
-                result.setdefault("used_by", []).extend(refs[name])
+                for user in refs[name]:
+                    used_by.append({"spec": sname, "item": user})
+        if used_by:
+            result["used_by"] = used_by
+
+        forks = item.get("forks", {})
 
         if fork:
-            fork_data = item.get("forks", {}).get(fork)
+            fork_data = forks.get(fork)
             if fork_data:
                 result["fork"] = fork
-                result["fields"] = fork_data.get("fields", [])
-                result["code"] = fork_data.get("code", "")
-                result["github_url"] = fork_data.get("github_url", "")
-                result["references"] = fork_data.get("references", [])
-                result["params"] = fork_data.get("params", [])
-                result["return_type"] = fork_data.get("return_type", "")
-                result["eips"] = fork_data.get("eips", [])
-                result["prose"] = fork_data.get("prose", "") or fork_data.get("description", "")
-                # Remove empty fields
+                result.update(self._extract_fork_fields(fork_data, forks, fork))
                 result = {k: v for k, v in result.items() if v or v == 0}
             else:
                 result["error"] = f"Type '{name}' exists but not at fork '{fork}'"
-                result["forks_available"] = list(item.get("forks", {}).keys())
+                result["forks_available"] = list(forks.keys())
         else:
             # Return latest fork data
-            forks = item.get("forks", {})
             if forks:
                 latest_fork = list(forks.keys())[-1]
                 latest = forks[latest_fork]
                 result["latest_fork"] = latest_fork
-                result["fields"] = latest.get("fields", [])
-                result["code"] = latest.get("code", "")
-                result["github_url"] = latest.get("github_url", "")
-                result["references"] = latest.get("references", [])
+                result.update(self._extract_fork_fields(latest, forks, latest_fork))
                 result = {k: v for k, v in result.items() if v or v == 0}
 
         return result
 
-    @staticmethod
-    def _normalize(s: str) -> str:
-        """Normalize for matching: lowercase, strip underscores/hyphens, collapse camelCase."""
-        # Insert separator before uppercase runs (camelCase -> camel_case)
-        s = re.sub(r'([a-z])([A-Z])', r'\1_\2', s)
-        # Lowercase and strip separators
-        return s.lower().replace("_", "").replace("-", "")
+    def _extract_fork_fields(self, fork_data: dict, all_forks: dict, fork_name: str) -> dict:
+        """Extract displayable fields from a fork entry.
+        Handles deduped code: if this fork has no 'code' key, inherit from
+        the most recent prior fork that does."""
+        out = {}
+        for key in ["fields", "references", "params", "eips"]:
+            if fork_data.get(key):
+                out[key] = fork_data[key]
+        if fork_data.get("return_type"):
+            out["return_type"] = fork_data["return_type"]
+        prose = fork_data.get("prose") or fork_data.get("description") or ""
+        if prose:
+            out["prose"] = prose
+        if fork_data.get("github_url"):
+            out["github_url"] = fork_data["github_url"]
+
+        # Resolve code: catalog dedupes by only storing code when it changes.
+        # Walk backwards through forks to find the most recent code.
+        code = fork_data.get("code", "")
+        if not code:
+            fork_keys = list(all_forks.keys())
+            idx = fork_keys.index(fork_name) if fork_name in fork_keys else -1
+            for i in range(idx - 1, -1, -1):
+                prev_code = all_forks[fork_keys[i]].get("code", "")
+                if prev_code:
+                    code = prev_code
+                    break
+        if code:
+            out["code"] = code
+
+        return out
 
     def lookup_endpoint(self, query: str) -> list:
         """Search endpoints by path, operation, or keyword."""
@@ -205,7 +211,6 @@ class SpecStore:
                     "fork_variants": endpoint.get("fork_variants", {}),
                     "ssz_support": endpoint.get("content_negotiation", {}).get("ssz_support", False),
                     "github_url": endpoint.get("github_url", ""),
-                    # JSON-RPC specific fields (execution-apis)
                     "result": endpoint.get("result"),
                     "errors": endpoint.get("errors"),
                     "examples": endpoint.get("examples"),
@@ -224,18 +229,17 @@ class SpecStore:
         """Return what changed in a specific fork."""
         result = {}
 
-        specs_to_check = [spec] if spec and spec in self.indexes else list(self.indexes.keys())
+        specs_to_check = [spec] if spec and spec in self.specs else list(self.specs.keys())
 
         for spec_name in specs_to_check:
-            data = self.indexes[spec_name]
-            fs = data.get("fork_summary", {}).get(fork)
+            spec_data = self.specs[spec_name]
+            fs = spec_data.get("fork_summary", {}).get(fork)
             if fs:
                 entry = {
                     "new": fs.get("new", []),
                     "modified": fs.get("modified", []),
                     "total": fs.get("total_definitions", 0),
                 }
-                # Include new_methods (OpenRPC) and new_constants (Python) if present
                 if fs.get("new_methods"):
                     entry["new_methods"] = fs["new_methods"]
                 if fs.get("new_constants"):
@@ -244,8 +248,8 @@ class SpecStore:
                     entry["fork_eips"] = fs["eips"]
                 result[spec_name] = entry
 
-            # Also check EIP index
-            eip_index = data.get("_eip_index", {})
+            # EIP index
+            eip_index = spec_data.get("eip_index", {})
             fork_eips = {}
             for eip_num, eip_data in eip_index.items():
                 fork_items = [i for i in eip_data.get("items", []) if i.get("fork") == fork]
@@ -255,10 +259,9 @@ class SpecStore:
                 result.setdefault(spec_name, {})["eips"] = fork_eips
 
         if not result:
-            # List available forks
             all_forks = set()
-            for data in self.indexes.values():
-                all_forks.update(data.get("_meta", {}).get("fork_order", []))
+            for sdata in self.specs.values():
+                all_forks.update(sdata.get("meta", {}).get("fork_order", []))
             return {"error": f"No changes found for fork '{fork}'", "available_forks": sorted(all_forks)}
 
         return result
@@ -273,19 +276,19 @@ class SpecStore:
         }
 
         # Where is it defined?
-        for spec_name, data in self.indexes.items():
-            if name in data.get("items", {}):
-                item = data["items"][name]
+        item = self.items.get(name)
+        if item:
+            for s in item.get("specs", []):
                 result["defined_in"].append({
-                    "spec": spec_name,
+                    "spec": s,
                     "kind": item.get("kind", ""),
                     "introduced": item.get("introduced", ""),
                     "forks": list(item.get("forks", {}).keys()),
                 })
 
-        # Who uses it? (reverse references)
-        for spec_name, data in self.indexes.items():
-            refs = data.get("_references", {})
+        # Reverse references
+        for spec_name, spec_data in self.specs.items():
+            refs = spec_data.get("references", {})
             if name in refs:
                 for user in refs[name]:
                     result["used_by"].append({
@@ -294,9 +297,9 @@ class SpecStore:
                     })
 
         # Cross-spec references
-        if self.cross_refs:
-            for ref_key, ref_data in self.cross_refs.get("cross_refs", {}).items():
-                if ref_data["to_type"] == name or ref_data["from_item"] == name:
+        for ref_key, ref_data in self.cross_refs.items():
+            if isinstance(ref_data, dict):
+                if ref_data.get("to_type") == name or ref_data.get("from_item") == name:
                     result["cross_spec_refs"].append(ref_data)
 
         # Canonical source
@@ -311,58 +314,61 @@ class SpecStore:
         query_norm = self._normalize(query)
         results = {"items": [], "constants": [], "endpoints": [], "type_aliases": []}
 
-        # Search items
-        for spec_name, data in self.indexes.items():
-            for item_name, item in data.get("items", {}).items():
-                if (query_lower in item_name.lower()
-                    or query_norm in self._normalize(item_name)
-                    or query_lower in item.get("domain", "").lower()):
-                    results["items"].append({
-                        "name": item_name,
-                        "spec": spec_name,
-                        "kind": item.get("kind", ""),
-                        "domain": item.get("domain", ""),
-                        "introduced": item.get("introduced", ""),
-                    })
+        # Search unified items
+        for item_name, item in self.items.items():
+            if (query_lower in item_name.lower()
+                or query_norm in self._normalize(item_name)
+                or query_lower in item.get("domain", "").lower()):
+                results["items"].append({
+                    "name": item_name,
+                    "spec": item.get("spec", ""),
+                    "kind": item.get("kind", ""),
+                    "domain": item.get("domain", ""),
+                    "introduced": item.get("introduced", ""),
+                })
 
-            # Search constants
-            for const_name, entries in data.get("constants", {}).items():
+        # Search per-spec constants, type_aliases, endpoints
+        for spec_name, spec_data in self.specs.items():
+            for const_name, entry in spec_data.get("constants", {}).items():
                 if query_lower in const_name.lower() or query_norm in self._normalize(const_name):
                     results["constants"].append({
                         "name": const_name,
                         "spec": spec_name,
-                        "value": entries[0].get("value", "") if entries else "",
+                        "value": entry.get("value", "") if isinstance(entry, dict) else "",
                     })
 
-            # Search type aliases
-            for alias_name, entries in data.get("type_aliases", {}).items():
+            for alias_name, entry in spec_data.get("type_aliases", {}).items():
                 if query_lower in alias_name.lower() or query_norm in self._normalize(alias_name):
                     results["type_aliases"].append({
                         "name": alias_name,
                         "spec": spec_name,
-                        "ssz_equivalent": entries[0].get("ssz_equivalent", "") if entries else "",
+                        "ssz_equivalent": entry.get("ssz_equivalent", "") if isinstance(entry, dict) else "",
                     })
 
-        # Search endpoints
-        for ep_key, (spec_name, ep) in self.all_endpoints.items():
-            if (query_lower in ep.get("path", "").lower()
-                or query_lower in ep.get("summary", "").lower()
-                or query_lower in ep.get("operation_id", "").lower()
-                or query_norm in self._normalize(ep.get("path", ""))
-                or query_norm in self._normalize(ep.get("operation_id", ""))):
-                results["endpoints"].append({
-                    "spec": spec_name,
-                    "method": ep.get("method", ""),
-                    "path": ep.get("path", ""),
-                    "summary": ep.get("summary", ""),
-                })
+            for ep_key, ep in spec_data.get("endpoints", {}).items():
+                if (query_lower in ep.get("path", "").lower()
+                    or query_lower in ep.get("summary", "").lower()
+                    or query_lower in ep.get("operation_id", "").lower()
+                    or query_norm in self._normalize(ep.get("path", ""))
+                    or query_norm in self._normalize(ep.get("operation_id", ""))):
+                    results["endpoints"].append({
+                        "spec": spec_name,
+                        "method": ep.get("method", ""),
+                        "path": ep.get("path", ""),
+                        "summary": ep.get("summary", ""),
+                    })
 
-        # Trim to limit
+        # Trim
         for key in results:
             results[key] = results[key][:limit]
-
         results["total"] = sum(len(v) for v in results.values())
         return results
+
+    @staticmethod
+    def _normalize(s: str) -> str:
+        """Normalize for matching."""
+        s = re.sub(r'([a-z])([A-Z])', r'\1_\2', s)
+        return s.lower().replace("_", "").replace("-", "")
 
     def _fuzzy_match(self, query: str, candidates: list, limit: int = 5) -> list:
         """Simple subsequence fuzzy match."""
@@ -371,26 +377,23 @@ class SpecStore:
         for name in candidates:
             name_lower = name.lower()
             if query_lower in name_lower:
-                # Substring match -- score by position and length difference
                 pos = name_lower.index(query_lower)
                 score = (100 - pos) + (100 - abs(len(name) - len(query)))
                 scored.append((score, name))
             else:
-                # Subsequence match
                 qi = 0
                 for c in name_lower:
                     if qi < len(query_lower) and c == query_lower[qi]:
                         qi += 1
                 if qi == len(query_lower):
                     scored.append((qi * 10, name))
-
         scored.sort(reverse=True)
         return [name for _, name in scored[:limit]]
 
 
 # ── MCP Server ─────────────────────────────────────────────────────────────
 
-def create_server(store: SpecStore, indexes_dir: str, repos_dir: Optional[str] = None) -> Server:
+def create_server(store: SpecStore, catalog_path: str, indexes_dir: Optional[str] = None, repos_dir: Optional[str] = None) -> Server:
     """Create the MCP server with all tool registrations."""
 
     server = Server("inspectoor")
@@ -571,7 +574,7 @@ def create_server(store: SpecStore, indexes_dir: str, repos_dir: Optional[str] =
 
             elif name == "reindex":
                 result = await _reindex(
-                    store, indexes_dir, repos_dir,
+                    store, catalog_path, indexes_dir, repos_dir,
                     specs=arguments.get("specs"),
                 )
 
@@ -588,12 +591,11 @@ def create_server(store: SpecStore, indexes_dir: str, repos_dir: Optional[str] =
 
 def _diff_type(store: SpecStore, name: str, from_fork: str, to_fork: str) -> dict:
     """Compare a type between two forks."""
-    if name not in store.all_items:
+    item = store.items.get(name)
+    if not item:
         return {"error": f"Type '{name}' not found"}
 
-    spec_name, item = store.all_items[name]
     forks = item.get("forks", {})
-
     if from_fork not in forks:
         return {"error": f"'{name}' not found at fork '{from_fork}'", "available": list(forks.keys())}
     if to_fork not in forks:
@@ -604,7 +606,7 @@ def _diff_type(store: SpecStore, name: str, from_fork: str, to_fork: str) -> dic
 
     result = {
         "name": name,
-        "spec": spec_name,
+        "spec": item.get("spec", ""),
         "from_fork": from_fork,
         "to_fork": to_fork,
     }
@@ -629,9 +631,23 @@ def _diff_type(store: SpecStore, name: str, from_fork: str, to_fork: str) -> dic
         result["fields_removed"] = removed
         result["fields_changed"] = changed
 
-    # Code diff (just show both -- let the agent reason about it)
-    from_code = from_data.get("code", "")
-    to_code = to_data.get("code", "")
+    # Code diff -- resolve deduped code for both forks
+    fork_keys = list(forks.keys())
+
+    def resolve_code(fork_name):
+        code = forks[fork_name].get("code", "")
+        if code:
+            return code
+        idx = fork_keys.index(fork_name) if fork_name in fork_keys else -1
+        for i in range(idx - 1, -1, -1):
+            prev = forks[fork_keys[i]].get("code", "")
+            if prev:
+                return prev
+        return ""
+
+    from_code = resolve_code(from_fork)
+    to_code = resolve_code(to_fork)
+
     if from_code != to_code:
         result["code_changed"] = True
         result["from_code"] = from_code
@@ -646,15 +662,19 @@ def _diff_type(store: SpecStore, name: str, from_fork: str, to_fork: str) -> dic
     return result
 
 
-async def _reindex(store: SpecStore, indexes_dir: str, repos_dir: Optional[str], specs: Optional[list] = None) -> dict:
-    """Rebuild indexes by shelling out to build.py and link.py."""
+async def _reindex(store: SpecStore, catalog_path: str, indexes_dir: Optional[str],
+                   repos_dir: Optional[str], specs: Optional[list] = None) -> dict:
+    """Rebuild indexes, rebuild catalog, and reload."""
     if not repos_dir:
         return {"error": "No repos directory configured. Start server with --repos-dir."}
+    if not indexes_dir:
+        return {"error": "No indexes directory configured. Start server with --indexes-dir."}
 
-    build_script = str(Path(__file__).parent / "build.py")
-    link_script = str(Path(__file__).parent / "link.py")
+    base_dir = Path(__file__).parent
+    build_script = str(base_dir / "build.py")
+    link_script = str(base_dir / "link.py")
+    catalog_script = str(base_dir / "build_catalog.py")
 
-    # Map spec names to repo subdirectories
     spec_repo_map = {
         "consensus-specs": "specs/consensus-specs",
         "builder-specs": "specs/builder-specs",
@@ -665,7 +685,6 @@ async def _reindex(store: SpecStore, indexes_dir: str, repos_dir: Optional[str],
         "execution-apis": "specs/execution-apis",
     }
 
-    # Branch overrides
     spec_branches = {
         "consensus-specs": "dev",
     }
@@ -715,9 +734,22 @@ async def _reindex(store: SpecStore, indexes_dir: str, repos_dir: Optional[str],
     except Exception as e:
         results["_linker"] = {"status": "error", "message": str(e)}
 
-    # Reload
-    store.load(indexes_dir)
-    results["_reload"] = {"status": "ok", "specs_loaded": len(store.indexes)}
+    # Rebuild catalog
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, catalog_script,
+            "--indexes-dir", indexes_dir,
+            "--output", catalog_path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        await proc.communicate()
+        results["_catalog"] = {"status": "ok" if proc.returncode == 0 else "error"}
+    except Exception as e:
+        results["_catalog"] = {"status": "error", "message": str(e)}
+
+    # Reload from freshly built catalog
+    store.load(catalog_path)
+    results["_reload"] = {"status": "ok", "items": len(store.items), "endpoints": len(store.all_endpoints)}
 
     return results
 
@@ -726,8 +758,10 @@ async def _reindex(store: SpecStore, indexes_dir: str, repos_dir: Optional[str],
 
 async def main():
     parser = argparse.ArgumentParser(description="The Inspectoor MCP Server")
+    parser.add_argument("--catalog", default="./docs/catalog.json",
+                        help="Path to catalog.json (default: ./docs/catalog.json)")
     parser.add_argument("--indexes-dir", default="./indexes",
-                        help="Directory containing pre-built indexes")
+                        help="Directory containing per-spec indexes (for reindex)")
     parser.add_argument("--repos-dir",
                         help="Directory containing spec repo clones (for reindex)")
     parser.add_argument("--rebuild", action="store_true",
@@ -739,21 +773,19 @@ async def main():
     # Rebuild if requested
     if args.rebuild and args.repos_dir:
         print("Rebuilding indexes...", file=sys.stderr)
-        result = await _reindex(store, args.indexes_dir, args.repos_dir)
+        result = await _reindex(store, args.catalog, args.indexes_dir, args.repos_dir)
         for spec, status in result.items():
             print(f"  {spec}: {status}", file=sys.stderr)
 
-    # Load indexes
+    # Load catalog
     try:
-        store.load(args.indexes_dir)
-        total_items = sum(d.get("_meta", {}).get("total_items", 0) for d in store.indexes.values())
-        total_endpoints = sum(len(d.get("endpoints", {})) for d in store.indexes.values())
-        print(f"Loaded {len(store.indexes)} specs: {total_items} items, {total_endpoints} endpoints", file=sys.stderr)
+        store.load(args.catalog)
+        print(f"Loaded catalog: {len(store.items)} items, {len(store.all_endpoints)} endpoints, {len(store.specs)} specs", file=sys.stderr)
     except FileNotFoundError:
-        print(f"Warning: No indexes found at {args.indexes_dir}", file=sys.stderr)
-        print("Start with --rebuild --repos-dir to build indexes", file=sys.stderr)
+        print(f"Warning: Catalog not found at {args.catalog}", file=sys.stderr)
+        print("Run build_catalog.py first, or start with --rebuild --repos-dir", file=sys.stderr)
 
-    server = create_server(store, args.indexes_dir, args.repos_dir)
+    server = create_server(store, args.catalog, args.indexes_dir, args.repos_dir)
 
     async with stdio_server() as (read, write):
         await server.run(read, write, server.create_initialization_options())

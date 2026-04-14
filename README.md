@@ -5,7 +5,7 @@ every spec repo (consensus, execution, builder, relay, beacon APIs, execution
 APIs, remote signing) into structured indexes, then serves them over MCP and a
 static explorer UI.
 
-**1,083 types, 168 endpoints, 355 constants, 47 type aliases across 7 specs.**
+**986 types, 168 endpoints, 355 constants, 47 type aliases across 7 specs.**
 
 ## Explorer UI
 
@@ -21,23 +21,45 @@ Open `docs/index.html` in a browser. No build step, no dependencies.
   showing how data flows between consensus, execution, builder, relay, and signer
   across 18 protocol endpoints
 
-The UI reads `docs/catalog.json`, a slim projection of the full indexes built by
-`build_catalog.py`.
-
 ## MCP Server
 
 ```bash
 # stdio transport (for agent integration)
 python3 server.py
 
-# custom indexes directory
-python3 server.py --indexes-dir /path/to/indexes
+# custom catalog and repos directory (enables reindex)
+python3 server.py --catalog docs/catalog.json --repos-dir ./repos
+
+# rebuild everything before starting
+python3 server.py --rebuild --repos-dir ./repos
 ```
 
 8 tools: `list_specs`, `lookup_type`, `lookup_endpoint`, `what_changed`,
 `trace_type`, `search`, `diff_type`, `reindex`.
 
 Dependencies: `pyyaml`, `mcp`.
+
+## Data Flow
+
+Both the MCP server and the explorer UI read the same artifact: `catalog.json`.
+Types that appear in multiple specs are merged with canonical-source attribution
+(e.g. `BeaconState` resolves to consensus-specs, not beacon-apis). No drift
+between what agents see and what the UI shows.
+
+```
+repos/ --> build.py --> indexes/ (per-spec, intermediate)
+                            |
+                        link.py --> _cross_refs.json
+                            |
+                    build_catalog.py --> catalog.json (canonical)
+                                            |
+                                    +-------+-------+
+                                    |               |
+                              server.py (MCP)   docs/ (UI)
+```
+
+Per-spec indexes under `indexes/` are intermediate build artifacts. The
+canonical data lives in `docs/catalog.json`.
 
 ## Spec Coverage
 
@@ -71,7 +93,7 @@ python3 build.py --profile remote-signing-api --repo-dir ./repos/specs/remote-si
 # cross-reference linking
 python3 link.py --indexes-dir ./indexes
 
-# build UI catalog
+# build catalog (consumed by both MCP server and UI)
 python3 build_catalog.py --indexes-dir ./indexes --output docs/catalog.json
 ```
 
@@ -81,18 +103,18 @@ the source repo and writes a `{spec}_index.json` to `./indexes/`.
 `link.py` resolves cross-spec type references (e.g. beacon-apis types referencing
 consensus-specs containers).
 
-`build_catalog.py` merges all indexes into a single `catalog.json` for the
-explorer UI, deduplicating shared types across specs and slimming the data for
-fast browser loading.
+`build_catalog.py` merges all indexes into `catalog.json`, deduplicating shared
+types across specs using canonical-source attribution. This is the single artifact
+consumed by both the MCP server and the explorer UI.
 
 ## Architecture
 
 ```
 .
 ├── build.py                  # orchestrates extraction per spec profile
-├── build_catalog.py          # merges indexes into UI catalog
+├── build_catalog.py          # merges indexes into catalog.json (canonical artifact)
 ├── link.py                   # cross-spec reference resolution
-├── server.py                 # MCP server (8 tools)
+├── server.py                 # MCP server (8 tools, reads catalog.json)
 ├── fetch_repos.sh            # clones all spec repos
 ├── extractors/
 │   ├── profiles.py           # spec profiles (paths, fork orders, extractor config)
@@ -102,11 +124,11 @@ fast browser loading.
 │   ├── extract_markdown.py   # Markdown type/endpoint extractor (beacon-apis, builder-specs)
 │   ├── enrich.py             # structural annotation (fields, params, references, domains)
 │   └── fetch_examples.py     # test fixture fetcher (standalone)
-├── indexes/                  # generated spec indexes (one JSON per spec + cross-refs)
+├── indexes/                  # generated per-spec indexes (intermediate build artifacts)
 ├── docs/
 │   ├── index.html            # explorer SPA (types, endpoints, diff, search)
 │   ├── visualizer.html       # transaction lifecycle diagram
-│   └── catalog.json          # generated UI data (from build_catalog.py)
+│   └── catalog.json          # canonical data (from build_catalog.py)
 ├── SCHEMA.md                 # index JSON schema documentation
 └── PLAN.md                   # development roadmap
 ```

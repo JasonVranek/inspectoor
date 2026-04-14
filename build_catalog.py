@@ -167,6 +167,7 @@ def build_catalog(indexes_dir, output_path):
             "domains": data.get("domains", {}),
             "fork_summary": data.get("fork_summary", {}),
             "eip_index": data.get("_eip_index", {}),
+            "references": data.get("_references", {}),
         }
 
         for name, ep in data.get("endpoints", {}).items():
