@@ -20,9 +20,9 @@ Usage:
 import argparse
 import asyncio
 import json
+import re
 import os
 import sys
-import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -169,7 +169,6 @@ class SpecStore:
     @staticmethod
     def _normalize(s: str) -> str:
         """Normalize for matching: lowercase, strip underscores/hyphens, collapse camelCase."""
-        import re
         # Insert separator before uppercase runs (camelCase -> camel_case)
         s = re.sub(r'([a-z])([A-Z])', r'\1_\2', s)
         # Lowercase and strip separators
@@ -216,8 +215,6 @@ class SpecStore:
 
                 if endpoint.get("request_body"):
                     result["request_body"] = endpoint["request_body"]
-                if endpoint.get("errors"):
-                    result["errors"] = endpoint["errors"]
 
                 results.append(result)
 

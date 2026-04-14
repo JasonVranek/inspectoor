@@ -1,219 +1,140 @@
 # The Inspectoor
 
-Deterministic extraction of every type, function, constant, and API endpoint
-across the Ethereum spec ecosystem into a unified JSON schema. Queryable as
-an MCP server.
+Deterministic extraction and exploration of Ethereum specification data. Parses
+every spec repo (consensus, execution, builder, relay, beacon APIs, execution
+APIs, remote signing) into structured indexes, then serves them over MCP and a
+static explorer UI.
 
-Built for agents and humans: query the protocol programmatically, render it
-in an explorer UI, or plug it into any MCP-compatible tool.
+**1,083 types, 168 endpoints, 355 constants, 47 type aliases across 7 specs.**
 
-## Setup
+## Explorer UI
 
-```bash
-# 1. Install dependencies
-pip install pyyaml mcp
+Open `ui/index.html` in a browser. No build step, no dependencies.
 
-# 2. Fetch all Ethereum spec repos
-./fetch_repos.sh
+- **Types** -- browse and search all types/functions/classes with fuzzy matching,
+  fork-aware code display with syntax highlighting and clickable cross-references
+- **Endpoints** -- REST and JSON-RPC endpoints with parameters, response types, and
+  fork variants
+- **Fork Diff** -- compare what changed between any two forks per spec, with inline
+  side-by-side code previews
+- **Visualizer** (`ui/visualizer.html`) -- interactive transaction lifecycle diagram
+  showing how data flows between consensus, execution, builder, relay, and signer
+  across 18 protocol endpoints
 
-# 3. Build indexes
-python3 build.py --profile consensus-specs --repo-dir ./repos/specs/consensus-specs --branch dev
-python3 build.py --profile builder-specs   --repo-dir ./repos/specs/builder-specs
-python3 build.py --profile relay-specs     --repo-dir ./repos/specs/relay-specs
-python3 build.py --profile beacon-apis     --repo-dir ./repos/specs/beacon-APIs
-
-# 4. Link cross-spec references
-python3 link.py
-
-# 5. (Optional) Start the MCP server
-python3 server.py --indexes-dir ./indexes --repos-dir ./repos
-```
-
-### Updating
-
-Pull the latest spec changes and rebuild:
-
-```bash
-./fetch_repos.sh --update
-# Then re-run the build commands above, or use the MCP reindex tool
-```
+The UI reads `ui/catalog.json`, a slim projection of the full indexes built by
+`build_catalog.py`.
 
 ## MCP Server
 
-The Inspectoor runs as an MCP server, giving any compatible agent structured
-access to Ethereum spec data without loading raw JSON into context.
+```bash
+# stdio transport (for agent integration)
+python3 server.py
 
-### Tools
-
-| Tool | Description |
-|------|-------------|
-| `list_specs` | What specs are loaded, item counts, available forks |
-| `lookup_type` | Look up a type/function by name. Returns fields, code, source link, references, EIPs. Fuzzy matching. |
-| `lookup_endpoint` | Search API endpoints by path, operation, or keyword. Shows params, SSZ support, fork variants. |
-| `what_changed` | What was added or modified in a fork, with EIP associations. |
-| `trace_type` | Trace a type across spec boundaries. Where it's defined, who uses it, cross-spec references. |
-| `search` | Fuzzy search across all items, constants, type aliases, and endpoints. |
-| `diff_type` | Compare a type between two forks. Field additions, removals, code changes. |
-| `reindex` | Rebuild indexes from source repos and reload. Requires `--repos-dir`. |
-
-### Configuration
-
-#### Hermes Agent
-
-Add to `~/.hermes/config.yaml`:
-
-```yaml
-mcp_servers:
-  inspectoor:
-    command: "python3"
-    args:
-      - "/path/to/inspectoor/server.py"
-      - "--indexes-dir"
-      - "/path/to/inspectoor/indexes"
-      - "--repos-dir"
-      - "/path/to/inspectoor/repos"
+# custom indexes directory
+python3 server.py --indexes-dir /path/to/indexes
 ```
 
-#### Claude Desktop
+8 tools: `list_specs`, `lookup_type`, `lookup_endpoint`, `what_changed`,
+`trace_type`, `search`, `diff_type`, `reindex`.
 
-Add to `claude_desktop_config.json`:
+Dependencies: `pyyaml`, `mcp`.
 
-```json
-{
-  "mcpServers": {
-    "inspectoor": {
-      "command": "python3",
-      "args": [
-        "/path/to/inspectoor/server.py",
-        "--indexes-dir", "/path/to/inspectoor/indexes",
-        "--repos-dir", "/path/to/inspectoor/repos"
-      ]
-    }
-  }
-}
-```
+## Spec Coverage
 
-#### Any MCP client (stdio transport)
+| Spec | Items | Endpoints | Constants | Extractor | Forks |
+|------|------:|----------:|----------:|-----------|-------|
+| consensus-specs | 528 | -- | 218 | Python AST | phase0 through heze |
+| execution-specs | 298 | -- | 135 | Python AST | frontier through amsterdam |
+| execution-apis | 93 | 72 | -- | OpenRPC | paris through amsterdam |
+| beacon-apis | 77 | 84 | -- | OpenAPI + Markdown | phase0 through gloas |
+| remote-signing-api | 59 | 2 | -- | OpenAPI | phase0 through fulu |
+| builder-specs | 16 | 5 | 2 | OpenAPI + Markdown | bellatrix through fulu |
+| relay-specs | 12 | 5 | -- | OpenAPI + Markdown | bellatrix through fulu |
+
+## Build
+
+Requires local clones of the spec repos.
 
 ```bash
-python3 server.py --indexes-dir ./indexes --repos-dir ./repos
+# fetch all spec repos
+./fetch_repos.sh
+
+# build individual spec indexes
+python3 build.py --profile consensus-specs    --repo-dir ./repos/specs/consensus-specs
+python3 build.py --profile execution-specs    --repo-dir ./repos/specs/execution-specs
+python3 build.py --profile execution-apis     --repo-dir ./repos/specs/execution-apis
+python3 build.py --profile beacon-apis        --repo-dir ./repos/specs/beacon-APIs
+python3 build.py --profile builder-specs      --repo-dir ./repos/specs/builder-specs
+python3 build.py --profile relay-specs        --repo-dir ./repos/specs/relay-specs
+python3 build.py --profile remote-signing-api --repo-dir ./repos/specs/remote-signing-api
+
+# cross-reference linking
+python3 link.py --indexes-dir ./indexes
+
+# build UI catalog
+python3 build_catalog.py --indexes-dir ./indexes --output ui/catalog.json
 ```
 
-The `--repos-dir` flag enables the `reindex` tool. Omit it for a read-only
-server that only serves pre-built indexes.
+Each `build.py` run extracts types, endpoints, constants, and fork metadata from
+the source repo and writes a `{spec}_index.json` to `./indexes/`.
 
-### Example queries
+`link.py` resolves cross-spec type references (e.g. beacon-apis types referencing
+consensus-specs containers).
 
-An agent with the Inspectoor MCP server can answer questions like:
-
-- "What fields does BuilderBid have at Electra?"
-  -> `lookup_type(name="BuilderBid", fork="electra")`
-
-- "What changed in the builder spec at Deneb?"
-  -> `what_changed(fork="deneb", spec="builder-specs")`
-
-- "What endpoints support SSZ?"
-  -> `lookup_endpoint(query="header")` then check `ssz_support`
-
-- "Where does ExecutionPayloadHeader come from and who depends on it?"
-  -> `trace_type(name="ExecutionPayloadHeader")`
-
-- "How did BuilderBid change between Deneb and Electra?"
-  -> `diff_type(name="BuilderBid", from_fork="deneb", to_fork="electra")`
-
-- "Rebuild the builder-specs index after a spec update"
-  -> `reindex(specs=["builder-specs"])`
-
-## Spec coverage
-
-| Spec | Status | Items | Constants | Endpoints | Source format |
-|------|--------|-------|-----------|-----------|---------------|
-| consensus-specs | done | 528 | 218 | - | Markdown + Python |
-| builder-specs | done | 16 | 2 | 5 | Markdown + OpenAPI |
-| relay-specs | done | 12 | - | 5 | Markdown + OpenAPI |
-| beacon-APIs | done | 77 | - | 84 | OpenAPI |
-| execution-specs | planned | | | | Python source |
-| execution-apis | planned | | | | OpenRPC |
-| remote-signing-api | planned | | | | OpenAPI |
-
-Cross-spec linking: 129 types in the unified type map, 78 cross-boundary
-references across 4 spec boundaries.
-
-## Schema
-
-See [SCHEMA.md](SCHEMA.md) for the full JSON schema specification.
-
-Every index file contains:
-- `items` -- types, functions, enums tracked across forks
-- `constants` -- named values across forks
-- `type_aliases` -- SSZ type mappings
-- `endpoints` -- API routes with parameters, responses, content negotiation
-- `_references` -- reverse dependency graph
-- `_field_index` -- field-level tracking across forks
-- `_eip_index` -- what each EIP touches
-- `_type_map` -- cross-spec type resolution
-
-The linker produces `_cross_refs.json` with:
-- `type_map` -- unified type map across all specs (canonical source wins)
-- `cross_refs` -- every reference that crosses a spec boundary
-- `boundaries` -- references grouped by spec pair
-
-## Direct JSON usage
-
-```python
-import json
-
-with open("indexes/builder-specs_index.json") as f:
-    spec = json.load(f)
-
-# What fields does BuilderBid have at Electra?
-spec["items"]["BuilderBid"]["forks"]["electra"]["fields"]
-
-# What changed in Electra?
-spec["fork_summary"]["electra"]
-
-# What endpoints support SSZ?
-[ep["path"] for ep in spec["endpoints"].values()
- if ep["content_negotiation"]["ssz_support"]]
-
-# Source link for verification
-spec["items"]["BuilderBid"]["forks"]["electra"]["github_url"]
-
-# Cross-spec type resolution
-with open("indexes/_cross_refs.json") as f:
-    xref = json.load(f)
-xref["type_map"]["ExecutionPayloadHeader"]
-# -> {"source": "ethereum/consensus-specs", "introduced": "bellatrix", "kind": "class"}
-```
+`build_catalog.py` merges all indexes into a single `catalog.json` for the
+explorer UI, deduplicating shared types across specs and slimming the data for
+fast browser loading.
 
 ## Architecture
 
 ```
-build.py                    # Build orchestrator
-link.py                     # Cross-spec linker
-server.py                   # MCP server (8 tools)
-fetch_repos.sh              # Clone/update all spec repos
-extractors/
-  profiles.py               # Per-repo configuration
-  extract_markdown.py       # Generic markdown+Python parser
-  extract_openapi.py        # OpenAPI endpoint + type schema extractor
-  enrich.py                 # Structural enrichment (fields, sigs, refs, EIPs)
-  fetch_examples.py         # SSZ test fixture fetcher (consensus-specs only)
-indexes/                    # Generated JSON indexes (gitignored)
-SCHEMA.md                   # JSON schema specification
+.
+├── build.py                  # orchestrates extraction per spec profile
+├── build_catalog.py          # merges indexes into UI catalog
+├── link.py                   # cross-spec reference resolution
+├── server.py                 # MCP server (8 tools)
+├── fetch_repos.sh            # clones all spec repos
+├── extractors/
+│   ├── profiles.py           # spec profiles (paths, fork orders, extractor config)
+│   ├── extract_python.py     # Python AST extractor (consensus-specs, execution-specs)
+│   ├── extract_openapi.py    # OpenAPI extractor (beacon-apis, builder-specs, relay-specs, remote-signing-api)
+│   ├── extract_openrpc.py    # OpenRPC extractor (execution-apis)
+│   ├── extract_markdown.py   # Markdown type/endpoint extractor (beacon-apis, builder-specs)
+│   ├── enrich.py             # structural annotation (fields, params, references, domains)
+│   └── fetch_examples.py     # test fixture fetcher (standalone)
+├── indexes/                  # generated spec indexes (one JSON per spec + cross-refs)
+├── ui/
+│   ├── index.html            # explorer SPA (types, endpoints, diff, search)
+│   ├── visualizer.html       # transaction lifecycle diagram
+│   └── catalog.json          # generated UI data (from build_catalog.py)
+├── SCHEMA.md                 # index JSON schema documentation
+└── PLAN.md                   # development roadmap
 ```
 
-### Adding a new spec repo
+### Extractors
 
-1. Add a `SpecProfile` in `extractors/profiles.py`
-2. Run `python3 build.py --profile your-profile --repo-dir /path/to/repo`
-3. Run `python3 link.py` to update cross-spec references
+Each extractor handles one source format:
 
-For repos with different source formats (Python source, OpenRPC), write a new
-extractor that outputs the same JSON schema.
+- **Python AST** (`extract_python.py`): Walks Python source files, extracts
+  class/function definitions with full code, tracks fork modifications via
+  `[New in fork]` / `[Modified in fork]` annotations.
+- **OpenAPI** (`extract_openapi.py`): Parses OpenAPI YAML, resolves `$ref`
+  chains, extracts endpoints with parameters, response types, SSZ support,
+  and fork variants.
+- **OpenRPC** (`extract_openrpc.py`): Parses OpenRPC JSON, extracts JSON-RPC
+  methods with params, results, error codes, and content descriptors.
+- **Markdown** (`extract_markdown.py`): Extracts type definitions and endpoint
+  descriptions from Markdown spec pages (used alongside OpenAPI for specs that
+  document types in prose).
 
-## Dependencies
+### Enrichment
 
-- Python 3.8+
-- `pyyaml` -- OpenAPI extraction
-- `mcp` -- MCP server (optional, only needed for server.py)
+`enrich.py` adds structural metadata after extraction: field lists for containers,
+function signatures, reference graphs between types, domain classification, and
+fork diff annotations (is_new, is_modified).
+
+### Profiles
+
+`profiles.py` defines the extraction configuration for each spec: which
+extractors to run, directory paths within the repo, fork ordering, GitHub URL
+templates, and any spec-specific extraction options.

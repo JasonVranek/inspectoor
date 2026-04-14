@@ -263,36 +263,6 @@ def extract_references(code: str, all_names: set) -> list:
     return refs
 
 
-# ── Composed type resolution ──────────────────────────────────────────────
-
-def compose_fields_at_fork(item: dict, target_fork: str, fork_order: list) -> list:
-    """Compose the full field list for a Container at a given fork.
-
-    Walks from the earliest fork to target_fork, applying field changes.
-    For the beacon chain spec, each fork redefines the ENTIRE Container
-    (not just the changed fields), so we just return the fields from the
-    latest fork at or before target_fork.
-    """
-    # Find the latest fork definition at or before target
-    target_idx = fork_order.index(target_fork) if target_fork in fork_order else 999
-
-    latest_fields = None
-    for fork in fork_order:
-        if fork_order.index(fork) > target_idx:
-            break
-        if fork in item.get("forks", {}):
-            defn = item["forks"][fork]
-            if "fields" in defn and defn["fields"]:
-                latest_fields = defn["fields"]
-
-    # Also check feature forks
-    for fork, defn in item.get("forks", {}).items():
-        if fork not in fork_order and "fields" in defn and defn["fields"]:
-            latest_fields = defn["fields"]
-
-    return latest_fields or []
-
-
 # ── Main enrichment ───────────────────────────────────────────────────────
 
 def enrich(data: dict) -> dict:

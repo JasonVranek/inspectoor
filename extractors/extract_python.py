@@ -16,7 +16,6 @@ import re
 import sys
 from collections import OrderedDict
 from pathlib import Path
-from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent))
 from profiles import SpecProfile

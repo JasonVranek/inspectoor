@@ -301,7 +301,6 @@ const FORK_DATA = {
 
 let currentFork = 'deneb';
 let catalog = null;
-let highlightedNode = null;
 
 // Load catalog
 fetch('catalog.json').then(r => r.json()).then(d => { catalog = d; }).catch(() => {});
@@ -408,7 +407,6 @@ function render() {
       d = `M${x1} ${y1} C${midX} ${y1} ${x2} ${y1} ${x2} ${y2}`;
       arrowAngle = dy > 0 ? Math.PI/2 : -Math.PI/2; // straight down or up
     }
-    const specKey = fromN.spec.replace(/[^a-z]/g,'');
     const color = SPEC_COLORS[fromN.spec] || '#8b949e';
     const path = el('path', { d:d, class:'edge-path', stroke:color, 'data-edge-idx':ei });
     edgesG.appendChild(path);
@@ -549,7 +547,6 @@ function showDetail(node) {
       <div class="field-value"><a href="${node.github}" target="_blank">${node.github}</a></div>
     </div>
   `;
-  const endpointName = node.label.replace(/V\d+$/, '');
   actions.innerHTML = `<a href="index.html#/endpoint/${node.spec}/${node.label}">View in Explorer &rarr;</a>`;
   panel.classList.add('open');
 }

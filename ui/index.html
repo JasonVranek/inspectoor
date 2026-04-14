@@ -679,7 +679,6 @@ function sortForks(forkNames) {
 
 let allItems = [];
 let allEndpoints = [];
-let allConstants = [];
 let searchQuery = '';
 
 // Persistent filter state (survives item selection)
@@ -733,7 +732,6 @@ async function init() {
 function buildIndexes() {
   allItems = [];
   allEndpoints = [];
-  allConstants = [];
   // Items are unified at catalog.items (deduped across specs)
   for (const [name, item] of Object.entries(catalog.items)) {
     allItems.push({ ...item, _type: 'item' });
@@ -747,7 +745,6 @@ function buildIndexes() {
     }
     if (spec.constants) {
       for (const [name, c] of Object.entries(spec.constants)) {
-        allConstants.push({ ...c, _spec: specName, _type: 'constant' });
       }
     }
   }
@@ -887,11 +884,6 @@ function fuzzyHighlight(text, query) {
 }
 
 // Backward compat wrapper -- returns true/false
-function matchesSearch(name, query) {
-  if (!query) return true;
-  return fuzzyScore(name, query) !== null;
-}
-
 function onSearchInput(val) {
   searchQuery = val;
   const hash = window.location.hash || '#/';
@@ -1015,10 +1007,18 @@ function copyCurl(btn) {
 }
 
 function switchForkTab(tabId, fork, btn) {
-  // Hide all code blocks for this tab group
+  // Hide all code blocks for this tab group, update source link
+  let githubUrl = '';
   document.querySelectorAll('.fork-code-block[data-tabs="' + tabId + '"]').forEach(el => {
-    el.style.display = el.dataset.fork === fork ? '' : 'none';
+    const show = el.dataset.fork === fork;
+    el.style.display = show ? '' : 'none';
+    if (show && el.dataset.githubUrl) githubUrl = el.dataset.githubUrl;
   });
+  // Update View Source button
+  const sourceBtn = document.getElementById('source-btn');
+  if (sourceBtn && githubUrl) {
+    sourceBtn.href = githubUrl;
+  }
   // Update button styles
   const parent = btn.parentElement;
   parent.querySelectorAll('.badge-fork').forEach(b => {
@@ -1072,9 +1072,9 @@ function typeLink(typeName, contextSpec) {
   return '<span style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted)">' + esc(typeName) + '</span>';
 }
 
-function githubBtn(url) {
+function githubBtn(url, id) {
   if (!url) return '';
-  return '<a class="btn" href="' + esc(url) + '" target="_blank" rel="noopener">↗ View Source</a>';
+  return '<a class="btn" ' + (id ? 'id="' + id + '" ' : '') + 'href="' + esc(url) + '" target="_blank" rel="noopener">↗ View Source</a>';
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1261,17 +1261,6 @@ function getCodeForFork(item, fork) {
   return '';
 }
 
-function getFieldsForFork(item, fork) {
-  // Walk backward from this fork to find the last fork with fields (carry-forward)
-  const forks = sortForksRaw(Object.keys(item.forks));
-  const idx = forks.indexOf(fork);
-  for (let i = idx; i >= 0; i--) {
-    const fd = item.forks[forks[i]];
-    if (fd && fd.fields && fd.fields.length) return fd.fields;
-  }
-  return null;
-}
-
 function highlightPython(code) {
   if (!code) return '';
   const KW = /\b(class|def|return|if|else|elif|for|while|in|not|and|or|is|assert|raise|import|from|as|with|yield|pass|break|continue|try|except|finally|True|False|None|lambda)\b/g;
@@ -1362,7 +1351,7 @@ function renderTypeDetailContent(selectedSpec, name) {
   // GitHub + EIPs row
   const latestData = item.forks[latestFork] || {};
   html += '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">';
-  html += githubBtn(latestData.github_url);
+  html += githubBtn(latestData.github_url, 'source-btn');
   if (latestData.eips && latestData.eips.length) {
     latestData.eips.forEach(eip => {
       const num = String(eip).replace(/^eip-?/i, '');
@@ -1435,7 +1424,8 @@ function renderTypeDetailContent(selectedSpec, name) {
       const code = getCodeForFork(item, f);
       const fd = item.forks[f];
       const isLast = i === codeForkNames.length - 1;
-      html += '<div class="fork-code-block" data-tabs="' + esc(tabId) + '" data-fork="' + esc(f) + '" style="' + (isLast ? '' : 'display:none') + '">';
+      const forkGithubUrl = (item.forks[f] && item.forks[f].github_url) || '';
+      html += '<div class="fork-code-block" data-tabs="' + esc(tabId) + '" data-fork="' + esc(f) + '" data-github-url="' + esc(forkGithubUrl) + '" style="' + (isLast ? '' : 'display:none') + '">';
 
       if (code) {
         html += '<pre class="code-block" style="max-height:600px">' + highlightPython(code) + '</pre>';

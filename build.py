@@ -27,8 +27,7 @@ from enrich import enrich
 
 
 def build(profile_name: str, repo_dir: str, branch: str = "main",
-          output_dir: str = "./indexes", skip_enrich: bool = False,
-          skip_examples: bool = True) -> str:
+          output_dir: str = "./indexes", skip_enrich: bool = False) -> str:
 
     profile = get_profile(profile_name)
     output_path = os.path.join(output_dir, f"{profile.name}_index.json")
@@ -216,7 +215,6 @@ def main():
     parser.add_argument("--output-dir", default="./indexes", help="Output directory")
     parser.add_argument("--branch", default="main", help="Git branch for GitHub URLs")
     parser.add_argument("--skip-enrich", action="store_true", help="Skip enrichment pass")
-    parser.add_argument("--skip-examples", action="store_true", default=True)
     args = parser.parse_args()
 
     build(
@@ -225,7 +223,6 @@ def main():
         branch=args.branch,
         output_dir=args.output_dir,
         skip_enrich=args.skip_enrich,
-        skip_examples=args.skip_examples,
     )
 
 
