@@ -386,6 +386,12 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   margin-bottom: 10px;
   color: var(--text);
 }
+.spec-desc {
+  font-size: 12px;
+  color: var(--fg-muted);
+  line-height: 1.5;
+  margin: 6px 0 10px 0;
+}
 .spec-card .stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -560,19 +566,30 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 
 /* JSON/Code blocks */
 .code-block {
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 14px;
+  border-radius: 8px;
+  padding: 14px 16px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 12.5px;
+  line-height: 1.6;
   overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--text-muted);
-  max-height: 300px;
+  white-space: pre;
+  color: var(--fg);
+  tab-size: 4;
+  max-height: 600px;
   overflow-y: auto;
 }
+.syn-comment { color: var(--text-dim); }
+.syn-keyword { color: var(--purple, #c4a0ff); }
+.syn-builtin { color: var(--cyan); }
+.syn-string { color: #a5d6ff; }
+.syn-decorator { color: var(--orange); }
+.syn-new-marker { color: var(--green); font-weight: 600; }
+.syn-mod-marker { color: var(--orange); font-weight: 600; }
+.syn-type { color: var(--purple, #c4a0ff); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+.syn-func { color: var(--green); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+a.type-link.syn-type:hover, a.type-link.syn-func:hover { text-decoration-style: solid; }
 </style>
 </head>
 <body>
@@ -604,6 +621,35 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
    GLOBALS
    ══════════════════════════════════════════════════════════════ */
 let catalog = null;
+
+// Canonical fork display order (CL and EL unified). Used for sorting fork tabs.
+const CL_FORK_ORDER = ['phase0','altair','bellatrix','capella','deneb','electra','fulu','gloas','heze'];
+const EL_FORK_ORDER = ['frontier','homestead','byzantium','constantinople','istanbul','berlin','london','paris','shanghai','cancun','prague','osaka','amsterdam'];
+const ALL_FORK_ORDER = [...CL_FORK_ORDER, ...EL_FORK_ORDER];
+
+// Forks to hide from the UI (internal names, not real network forks)
+const HIDDEN_FORKS = new Set([
+  'dao_fork','tangerine_whistle','spurious_dragon','muir_glacier',
+  'arrow_glacier','gray_glacier','bpo1','bpo2','bpo3','bpo4','bpo5','unversioned'
+]);
+
+// Sort fork names by canonical order (no filtering) -- for internal carry-forward
+function sortForksRaw(forkNames) {
+  return [...forkNames].sort((a, b) => {
+    const ai = ALL_FORK_ORDER.indexOf(a);
+    const bi = ALL_FORK_ORDER.indexOf(b);
+    if (ai === -1 && bi === -1) return a.localeCompare(b);
+    if (ai === -1) return 1;
+    if (bi === -1) return 1;
+    return ai - bi;
+  });
+}
+
+// Sort fork names by canonical order, filter hidden -- for display
+function sortForks(forkNames) {
+  return sortForksRaw(forkNames).filter(f => !HIDDEN_FORKS.has(f));
+}
+
 let allItems = [];
 let allEndpoints = [];
 let allConstants = [];
@@ -1005,14 +1051,26 @@ function renderSpecsOverview(container) {
   html += '<div class="overview-stat"><div class="val">' + totalAliases + '</div><div class="label">Type Aliases</div></div>';
   html += '</div>';
 
+
+  const SPEC_DESC = {
+    'consensus-specs': 'The core protocol: fork choice, state transitions, validator duties, and the beacon chain mechanics that keep Ethereum in consensus.',
+    'execution-specs': 'Execution layer logic: EVM opcodes, state trie, transaction processing, and the rules that turn transactions into state changes.',
+    'execution-apis': 'JSON-RPC for wallets and nodes, plus the Engine API that drives block building between consensus and execution clients.',
+    'beacon-apis': 'The REST API exposed by beacon nodes. Used by validators, tooling, and the consensus client itself to query chain state and submit duties.',
+    'builder-specs': 'The proposer-builder separation API. Defines how validators request execution payload headers from builders via a sidecar like mev-boost.',
+    'relay-specs': 'The relay API that sits between builders and proposers. Handles block submission, bid delivery, and payload revelation.',
+    'remote-signing-api': 'The API for delegating validator signing to a remote signer (Web3Signer, Dirk). Keeps keys off the beacon node.'
+  };
+
   // Cards
   html += '<div class="cards-grid">';
   for (const [specName, specData] of Object.entries(catalog.specs)) {
     const m = specData.meta || {};
     const sm = catalog._meta.specs[specName] || {};
-    const forkCount = (m.fork_order || []).length;
+    const forkCount = sortForks(m.fork_order || []).length;
     html += '<div class="spec-card" onclick="navigate(\'#/types?spec=' + encodeURIComponent(specName) + '\')">';
     html += '<h3>' + specBadge(specName) + ' ' + esc(specName) + '</h3>';
+    if (SPEC_DESC[specName]) html += '<p class="spec-desc">' + SPEC_DESC[specName] + '</p>';
     html += '<div class="stats">';
     html += '<div class="stat"><strong>' + (sm.items || 0) + '</strong>Types</div>';
     html += '<div class="stat"><strong>' + (sm.endpoints || 0) + '</strong>Endpoints</div>';
@@ -1021,7 +1079,7 @@ function renderSpecsOverview(container) {
     html += '</div>';
     if (m.fork_order && m.fork_order.length) {
       html += '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:3px">';
-      m.fork_order.forEach(f => { html += forkBadge(f); });
+      sortForks(m.fork_order || []).forEach(f => { html += forkBadge(f); });
       html += '</div>';
     }
     html += '</div>';
@@ -1141,21 +1199,34 @@ function typeFilterBtn(key, value, label, count, active) {
    VIEW 3: TYPE DETAIL
    ══════════════════════════════════════════════════════════════ */
 function getCodeForFork(item, fork) {
-  // Walk backward from this fork to find the last fork with code (dedup strategy)
-  const forks = Object.keys(item.forks);
+  // Walk backward from this fork to find the last fork with code (carry-forward)
+  // Use sortForksRaw so we can reach code in hidden forks (e.g. spurious_dragon)
+  const forks = sortForksRaw(Object.keys(item.forks));
   const idx = forks.indexOf(fork);
   for (let i = idx; i >= 0; i--) {
-    if (item.forks[forks[i]].code) return item.forks[forks[i]].code;
+    if (item.forks[forks[i]] && item.forks[forks[i]].code) return item.forks[forks[i]].code;
   }
   return '';
+}
+
+function getFieldsForFork(item, fork) {
+  // Walk backward from this fork to find the last fork with fields (carry-forward)
+  const forks = sortForksRaw(Object.keys(item.forks));
+  const idx = forks.indexOf(fork);
+  for (let i = idx; i >= 0; i--) {
+    const fd = item.forks[forks[i]];
+    if (fd && fd.fields && fd.fields.length) return fd.fields;
+  }
+  return null;
 }
 
 function highlightPython(code) {
   if (!code) return '';
   const KW = /\b(class|def|return|if|else|elif|for|while|in|not|and|or|is|assert|raise|import|from|as|with|yield|pass|break|continue|try|except|finally|True|False|None|lambda)\b/g;
+  const BUILTIN = /\b(uint64|uint8|uint16|uint32|uint128|uint256|Bytes|Bytes1|Bytes4|Bytes8|Bytes20|Bytes32|Bytes48|Bytes96|Bytes256|byte|bool|int|str|list|dict|tuple|set|List|Vector|Bitlist|Bitvector|ByteList|ByteVector|Container|StableContainer|Profile|Union|GeneralizedIndex|Optional)\b/g;
   return code.split('\n').map(line => {
     let escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    // Find comment
+    // Find comment start (not inside a string)
     let inStr = null, commentIdx = -1;
     for (let i = 0; i < escaped.length; i++) {
       const ch = escaped[i];
@@ -1165,26 +1236,33 @@ function highlightPython(code) {
     let codePart, commentPart;
     if (commentIdx >= 0) {
       codePart = escaped.slice(0, commentIdx);
-      const raw = escaped.slice(commentIdx);
-      commentPart = '<span style="color:var(--text-dim)">' +
-        raw.replace(/(\[New in [^\]]+\])/g, '<span style="color:var(--green)">$1</span>')
-           .replace(/(\[Modified in [^\]]+\])/g, '<span style="color:var(--orange)">$1</span>') +
+      const rawComment = escaped.slice(commentIdx);
+      commentPart = '<span class="syn-comment">' +
+        rawComment
+          .replace(/(\[New in [^\]]+\])/g, '<span class="syn-new-marker">$1</span>')
+          .replace(/(\[Modified in [^\]]+\])/g, '<span class="syn-mod-marker">$1</span>') +
         '</span>';
     } else {
       codePart = escaped;
       commentPart = '';
     }
-    // Keywords in code part
     function linkifyCode(seg) {
-      let result = seg.replace(KW, '<span style="color:var(--pink)">$1</span>');
-      // Linkify known types
+      let result = seg.replace(KW, '<span class="syn-keyword">$1</span>');
+      result = result.replace(BUILTIN, '<span class="syn-builtin">$1</span>');
+      // Linkify known types and identifiers
       if (catalog) {
-        const parts = result.split(/(<span[^>]*>.*?<\/span>)/g);
+        const parts = result.split(/(<span[^>]*>.*?<\/span>|<a[^>]*>.*?<\/a>)/g);
         result = parts.map(part => {
-          if (part.startsWith('<span')) return part;
-          return part.replace(/\b([A-Z][A-Za-z0-9_]*)\b/g, (match) => {
+          if (part.startsWith('<span') || part.startsWith('<a')) return part;
+          return part.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\b/g, (match) => {
+            const it = catalog.items[match];
+            if (it) {
+              const kind = it.kind;
+              const cls = (kind === 'class' || kind === 'dataclass') ? 'syn-type' : 'syn-func';
+              return '<a class="type-link ' + cls + '" href="#/type/' + encodeURIComponent(match) + '">' + match + '</a>';
+            }
             const s = resolveTypeSpec(match);
-            if (s) return '<a class="type-link" href="#/type/' + encodeURIComponent(match) + '">' + match + '</a>';
+            if (s) return '<a class="type-link syn-type" href="#/type/' + encodeURIComponent(match) + '">' + match + '</a>';
             return match;
           });
         }).join('');
@@ -1196,12 +1274,12 @@ function highlightPython(code) {
     let processed = '', lastIdx = 0, m;
     while ((m = strRe.exec(codePart)) !== null) {
       processed += linkifyCode(codePart.slice(lastIdx, m.index));
-      processed += '<span style="color:var(--orange)">' + m[0] + '</span>';
+      processed += '<span class="syn-string">' + m[0] + '</span>';
       lastIdx = m.index + m[0].length;
     }
     processed += linkifyCode(codePart.slice(lastIdx));
     // Decorators
-    processed = processed.replace(/^(\s*)(@\w+)/, '$1<span style="color:var(--cyan)">$2</span>');
+    processed = processed.replace(/^(\s*)(@\w+)/, '$1<span class="syn-decorator">$2</span>');
     return processed + commentPart;
   }).join('\n');
 }
@@ -1242,7 +1320,44 @@ function renderTypeDetailContent(selectedSpec, name) {
   html += '</div>';
 
   // Fork code tabs (shown first -- the main content) -- use item (may be from a different spec if this spec has no code)
-  const codeForkNames = Object.keys(item.forks);
+  // Build fork tab list: only show forks where something actually changed
+  function fieldsSignature(fields) {
+    if (!fields || !fields.length) return '';
+    return fields.map(f => f.name + ':' + f.type).join('|');
+  }
+  function hasDiff(item, fork, allSorted) {
+    const fd = item.forks[fork];
+    if (!fd) return false;
+    if (fd.code || fd.is_new || fd.is_modified) return true;
+    // If this fork only has fields, check if they differ from the previous fork
+    if (fd.fields && fd.fields.length) {
+      const idx = allSorted.indexOf(fork);
+      if (idx <= 0) return true; // first fork with fields = always show
+      // Walk backward to find previous fork with fields
+      for (let i = idx - 1; i >= 0; i--) {
+        const prev = item.forks[allSorted[i]];
+        if (prev && prev.fields && prev.fields.length) {
+          return fieldsSignature(fd.fields) !== fieldsSignature(prev.fields);
+        }
+      }
+      return true; // no previous fork with fields found
+    }
+    return false;
+  }
+  const allSortedRaw = sortForksRaw(Object.keys(item.forks));
+  let codeForkNames = sortForks(Object.keys(item.forks)).filter(f => hasDiff(item, f, allSortedRaw));
+  // If all forks were filtered out, fall back to unfiltered (e.g. types only in 'unversioned')
+  if (codeForkNames.length === 0) {
+    codeForkNames = allSortedRaw.filter(f => hasDiff(item, f, allSortedRaw));
+  }
+  // Last resort: show the last fork that has any content at all
+  if (codeForkNames.length === 0) {
+    const lastWithContent = allSortedRaw.filter(f => {
+      const fd = item.forks[f];
+      return fd && (fd.code || fd.fields || fd.is_new);
+    });
+    if (lastWithContent.length) codeForkNames = [lastWithContent[lastWithContent.length - 1]];
+  }
   const hasCode = codeForkNames.some(f => getCodeForFork(item, f));
 
   if (hasCode && codeForkNames.length > 0) {
@@ -1270,19 +1385,9 @@ function renderTypeDetailContent(selectedSpec, name) {
       const isLast = i === codeForkNames.length - 1;
       html += '<div class="fork-code-block" data-tabs="' + esc(tabId) + '" data-fork="' + esc(f) + '" style="' + (isLast ? '' : 'display:none') + '">';
 
-      // Fields for this fork (if available and it's a class/dataclass)
-      const forkFields = fd.fields || (item.forks[f] ? item.forks[f].fields : null);
-      if (forkFields && forkFields.length) {
-        html += '<table class="data-table" style="margin-bottom:12px"><thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead><tbody>';
-        forkFields.forEach(field => {
-          html += '<tr><td>' + esc(field.name) + '</td><td>' + typeLink(field.type, spec) + '</td><td style="font-family:var(--font-sans);font-size:12px;color:var(--text-muted)">' + esc(field.description || '') + '</td></tr>';
-        });
-        html += '</tbody></table>';
-      }
-
       if (code) {
         html += '<pre class="code-block" style="max-height:600px">' + highlightPython(code) + '</pre>';
-      } else if (!forkFields || !forkFields.length) {
+      } else {
         html += '<div style="padding:12px;color:var(--text-dim);font-size:12px">No definition in this fork.</div>';
       }
       html += '</div>';
@@ -1330,7 +1435,7 @@ function renderTypeDetailContent(selectedSpec, name) {
   if (latestData.references && latestData.references.length) {
     html += '<div class="detail-section"><h3>References</h3>';
     html += '<div class="pill-group">';
-    latestData.references.forEach(ref => { html += typeLink(ref, spec) + ' '; });
+    latestData.references.forEach((ref, i) => { html += typeLink(ref, spec); if (i < latestData.references.length - 1) html += ', '; });
     html += '</div></div>';
   }
 
@@ -1702,7 +1807,7 @@ function renderEndpointDetailContent(spec, key) {
 function renderDiffView(container, params) {
   const specName = params.spec || Object.keys(catalog.specs)[0];
   const specData = catalog.specs[specName];
-  const forkOrder = (specData && specData.meta && specData.meta.fork_order) || [];
+  const forkOrder = sortForks((specData && specData.meta && specData.meta.fork_order) || []);
   const fromFork = params.from || (forkOrder.length > 1 ? forkOrder[forkOrder.length - 2] : forkOrder[0] || '');
   const toFork = params.to || forkOrder[forkOrder.length - 1] || '';
 
