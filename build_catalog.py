@@ -265,6 +265,6 @@ def build_catalog(indexes_dir, output_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--indexes-dir", default="indexes")
-    parser.add_argument("--output", default="ui/catalog.json")
+    parser.add_argument("--output", default="docs/catalog.json")
     args = parser.parse_args()
     build_catalog(args.indexes_dir, args.output)

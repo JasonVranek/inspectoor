@@ -9,7 +9,7 @@ static explorer UI.
 
 ## Explorer UI
 
-Open `ui/index.html` in a browser. No build step, no dependencies.
+Open `docs/index.html` in a browser. No build step, no dependencies.
 
 - **Types** -- browse and search all types/functions/classes with fuzzy matching,
   fork-aware code display with syntax highlighting and clickable cross-references
@@ -17,11 +17,11 @@ Open `ui/index.html` in a browser. No build step, no dependencies.
   fork variants
 - **Fork Diff** -- compare what changed between any two forks per spec, with inline
   side-by-side code previews
-- **Visualizer** (`ui/visualizer.html`) -- interactive transaction lifecycle diagram
+- **Visualizer** (`docs/visualizer.html`) -- interactive transaction lifecycle diagram
   showing how data flows between consensus, execution, builder, relay, and signer
   across 18 protocol endpoints
 
-The UI reads `ui/catalog.json`, a slim projection of the full indexes built by
+The UI reads `docs/catalog.json`, a slim projection of the full indexes built by
 `build_catalog.py`.
 
 ## MCP Server
@@ -72,7 +72,7 @@ python3 build.py --profile remote-signing-api --repo-dir ./repos/specs/remote-si
 python3 link.py --indexes-dir ./indexes
 
 # build UI catalog
-python3 build_catalog.py --indexes-dir ./indexes --output ui/catalog.json
+python3 build_catalog.py --indexes-dir ./indexes --output docs/catalog.json
 ```
 
 Each `build.py` run extracts types, endpoints, constants, and fork metadata from
@@ -103,7 +103,7 @@ fast browser loading.
 │   ├── enrich.py             # structural annotation (fields, params, references, domains)
 │   └── fetch_examples.py     # test fixture fetcher (standalone)
 ├── indexes/                  # generated spec indexes (one JSON per spec + cross-refs)
-├── ui/
+├── docs/
 │   ├── index.html            # explorer SPA (types, endpoints, diff, search)
 │   ├── visualizer.html       # transaction lifecycle diagram
 │   └── catalog.json          # generated UI data (from build_catalog.py)
