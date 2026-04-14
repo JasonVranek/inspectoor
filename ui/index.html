@@ -490,6 +490,33 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   margin-bottom: 2px;
 }
 .diff-item:hover { background: var(--surface-2); }
+.diff-item.expanded { background: var(--surface-2); }
+.diff-item-preview {
+  padding: 8px 12px;
+  margin: 0 0 4px 0;
+  border-left: 2px solid var(--border);
+  background: var(--surface-1);
+  border-radius: 0 4px 4px 0;
+}
+.diff-item-preview .code-block {
+  max-height: 400px;
+  margin: 0;
+  font-size: 11px;
+}
+.diff-item-preview .pill-group { margin-bottom: 6px; }
+.diff-item-preview .diff-preview-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-family: var(--font-sans);
+}
+.diff-item-preview .diff-preview-refs {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 6px;
+  font-family: var(--font-mono);
+}
+.diff-item-preview .diff-preview-refs a { color: var(--accent); }
 
 /* Endpoint detail */
 .method-path {
@@ -868,11 +895,32 @@ function matchesSearch(name, query) {
 function onSearchInput(val) {
   searchQuery = val;
   const hash = window.location.hash || '#/';
-  if (hash.startsWith('#/types') || hash.startsWith('#/endpoints')) {
+  if (hash.startsWith('#/diff')) {
+    filterDiffItems(val);
+  } else if (hash.startsWith('#/types') || hash.startsWith('#/endpoints')) {
     route();
   } else if (val.length > 0) {
     navigate('#/types');
   }
+}
+
+function filterDiffItems(query) {
+  document.querySelectorAll('.diff-group').forEach(group => {
+    const items = group.querySelectorAll('.diff-item');
+    let anyVisible = false;
+    items.forEach(item => {
+      const preview = item.nextElementSibling;
+      // Extract just the type/function name (strip the +/~ prefix)
+      const name = item.textContent.trim().replace(/^[+~]\s*/, '');
+      const match = !query || fuzzyScore(name, query) !== null;
+      item.style.display = match ? '' : 'none';
+      if (preview && preview.classList.contains('diff-item-preview')) {
+        if (!match) preview.style.display = 'none';
+      }
+      if (match) anyVisible = true;
+    });
+    group.style.display = anyVisible ? '' : 'none';
+  });
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -896,7 +944,11 @@ document.addEventListener('keydown', (e) => {
     } else if (searchQuery) {
       searchQuery = '';
       searchInput.value = '';
-      route();
+      if ((window.location.hash || '').startsWith('#/diff')) {
+        filterDiffItems('');
+      } else {
+        route();
+      }
     } else {
       history.back();
     }
@@ -1810,6 +1862,7 @@ function renderDiffView(container, params) {
   const forkOrder = sortForks((specData && specData.meta && specData.meta.fork_order) || []);
   const fromFork = params.from || (forkOrder.length > 1 ? forkOrder[forkOrder.length - 2] : forkOrder[0] || '');
   const toFork = params.to || forkOrder[forkOrder.length - 1] || '';
+  const fromIdx = forkOrder.indexOf(fromFork);
 
   let html = '<div class="panel-full">';
   html += '<h2 style="font-size:18px;margin-bottom:16px;font-family:var(--font-mono)">Fork Diff</h2>';
@@ -1824,7 +1877,7 @@ function renderDiffView(container, params) {
   html += '</select>';
 
   html += '<label style="font-size:12px;color:var(--text-muted)">From:</label>';
-  html += '<select onchange="navigateDiff(null, this.value, null)" id="diff-from">';
+  html += '<select onchange="diffUpdateFrom(this.value)" id="diff-from">';
   forkOrder.forEach(f => {
     html += '<option value="' + esc(f) + '"' + (f === fromFork ? ' selected' : '') + '>' + esc(f) + '</option>';
   });
@@ -1834,8 +1887,9 @@ function renderDiffView(container, params) {
 
   html += '<label style="font-size:12px;color:var(--text-muted)">To:</label>';
   html += '<select onchange="navigateDiff(null, null, this.value)" id="diff-to">';
-  forkOrder.forEach(f => {
-    html += '<option value="' + esc(f) + '"' + (f === toFork ? ' selected' : '') + '>' + esc(f) + '</option>';
+  forkOrder.forEach((f, i) => {
+    const disabled = i <= fromIdx;
+    html += '<option value="' + esc(f) + '"' + (f === toFork ? ' selected' : '') + (disabled ? ' disabled style="color:var(--text-dim)"' : '') + '>' + esc(f) + '</option>';
   });
   html += '</select>';
   html += '</div>';
@@ -1852,8 +1906,10 @@ function renderDiffView(container, params) {
       html += '<div class="diff-group">';
       html += '<h3 style="color:var(--green)">✚ New in ' + esc(toFork) + ' <span class="count-badge" style="background:rgba(63,185,80,0.15);color:var(--green)">' + newItems.length + '</span></h3>';
       newItems.forEach(name => {
-        html += '<div class="diff-item" onclick="navigate(\'#/type/' + encodeURIComponent(name) + '\')" style="color:var(--green)">' +
+        const itemId = 'diff-preview-' + name.replace(/[^a-zA-Z0-9]/g, '_');
+        html += '<div class="diff-item" onclick="toggleDiffPreview(this, \'' + esc(name) + '\', \'' + esc(toFork) + '\', \'' + esc(specName) + '\', null)" style="color:var(--green)">' +
           '+ ' + esc(name) + '</div>';
+        html += '<div class="diff-item-preview" id="' + itemId + '" style="display:none"></div>';
       });
       html += '</div>';
     }
@@ -1862,8 +1918,10 @@ function renderDiffView(container, params) {
       html += '<div class="diff-group">';
       html += '<h3 style="color:var(--orange)">✎ Modified in ' + esc(toFork) + ' <span class="count-badge" style="background:rgba(210,153,34,0.15);color:var(--orange)">' + modifiedItems.length + '</span></h3>';
       modifiedItems.forEach(name => {
-        html += '<div class="diff-item" onclick="navigate(\'#/type/' + encodeURIComponent(name) + '\')" style="color:var(--orange)">' +
+        const itemId = 'diff-preview-' + name.replace(/[^a-zA-Z0-9]/g, '_');
+        html += '<div class="diff-item" onclick="toggleDiffPreview(this, \'' + esc(name) + '\', \'' + esc(toFork) + '\', \'' + esc(specName) + '\', \'' + esc(fromFork) + '\')" style="color:var(--orange)">' +
           '~ ' + esc(name) + '</div>';
+        html += '<div class="diff-item-preview" id="' + itemId + '" style="display:none"></div>';
       });
       html += '</div>';
     }
@@ -1872,7 +1930,10 @@ function renderDiffView(container, params) {
       html += '<div class="diff-group">';
       html += '<h3 style="color:var(--cyan)">⚡ New Methods in ' + esc(toFork) + ' <span class="count-badge" style="background:rgba(57,210,192,0.15);color:var(--cyan)">' + newMethods.length + '</span></h3>';
       newMethods.forEach(name => {
-        html += '<div class="diff-item" style="color:var(--cyan)">+ ' + esc(name) + '</div>';
+        const itemId = 'diff-preview-' + name.replace(/[^a-zA-Z0-9]/g, '_');
+        html += '<div class="diff-item" onclick="toggleDiffPreview(this, \'' + esc(name) + '\', \'' + esc(toFork) + '\', \'' + esc(specName) + '\', null)" style="color:var(--cyan)">' +
+          '+ ' + esc(name) + '</div>';
+        html += '<div class="diff-item-preview" id="' + itemId + '" style="display:none"></div>';
       });
       html += '</div>';
     }
@@ -1916,6 +1977,95 @@ function renderDiffView(container, params) {
 
   html += '</div>';
   container.innerHTML = html;
+}
+
+
+function toggleDiffPreview(el, name, toFork, specName, fromFork) {
+  const previewId = 'diff-preview-' + name.replace(/[^a-zA-Z0-9]/g, '_');
+  const preview = document.getElementById(previewId);
+  if (!preview) return;
+
+  // Toggle
+  if (preview.style.display !== 'none') {
+    preview.style.display = 'none';
+    el.classList.remove('expanded');
+    return;
+  }
+
+  el.classList.add('expanded');
+  preview.style.display = 'block';
+
+  // Build preview content
+  const item = catalog.items[name];
+  if (!item) {
+    preview.innerHTML = '<div style="padding:8px;color:var(--text-dim);font-size:12px">Type not found in catalog.</div>';
+    return;
+  }
+
+  let ph = '';
+
+  // Meta line: kind, spec, domain
+  const meta = [];
+  if (item.kind) meta.push(item.kind);
+  if (item.domain) meta.push(item.domain);
+  ph += '<div class="diff-preview-meta">' + meta.join(' · ') +
+    ' <a href="#/type/' + encodeURIComponent(name) + '" style="color:var(--accent);margin-left:8px;font-size:10px" onclick="event.stopPropagation()">open full →</a></div>';
+
+  // Code for the target fork
+  const toCode = getCodeForFork(item, toFork);
+
+  if (fromFork && toCode) {
+    // Modified item: show from-code and to-code side by side or stacked
+    const fromCode = getCodeForFork(item, fromFork);
+    if (fromCode && fromCode !== toCode) {
+      ph += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+      ph += '<div style="flex:1;min-width:280px"><div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">' + esc(fromFork) + '</div>';
+      ph += '<pre class="code-block" style="max-height:400px;font-size:11px">' + highlightPython(fromCode) + '</pre></div>';
+      ph += '<div style="flex:1;min-width:280px"><div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">' + esc(toFork) + '</div>';
+      ph += '<pre class="code-block" style="max-height:400px;font-size:11px">' + highlightPython(toCode) + '</pre></div>';
+      ph += '</div>';
+    } else {
+      // Same code or no from-code, just show the target
+      ph += '<pre class="code-block" style="max-height:400px;font-size:11px">' + highlightPython(toCode) + '</pre>';
+    }
+  } else if (toCode) {
+    // New item: just show the code
+    ph += '<pre class="code-block" style="max-height:400px;font-size:11px">' + highlightPython(toCode) + '</pre>';
+  } else {
+    ph += '<div style="padding:8px;color:var(--text-dim);font-size:12px">No code definition available.</div>';
+  }
+
+  // References
+  const latestForks = sortForksRaw(Object.keys(item.forks || {}));
+  const latestFork = latestForks[latestForks.length - 1];
+  const latestData = (latestFork && item.forks[latestFork]) || {};
+  if (latestData.references && latestData.references.length) {
+    ph += '<div class="diff-preview-refs">refs: ';
+    latestData.references.forEach((ref, i) => {
+      ph += typeLink(ref, specName);
+      if (i < latestData.references.length - 1) ph += ', ';
+    });
+    ph += '</div>';
+  }
+
+  preview.innerHTML = ph;
+}
+
+function diffUpdateFrom(fromVal) {
+  // When "From" changes, constrain "To" and navigate
+  const specName = parseParams(window.location.hash).spec || Object.keys(catalog.specs)[0];
+  const specData = catalog.specs[specName];
+  const forkOrder = sortForks((specData && specData.meta && specData.meta.fork_order) || []);
+  const fromIdx = forkOrder.indexOf(fromVal);
+  const toSel = document.getElementById('diff-to');
+  let currentTo = toSel ? toSel.value : '';
+  const currentToIdx = forkOrder.indexOf(currentTo);
+
+  // If current "To" is at or before new "From", bump it to the next fork
+  if (currentToIdx <= fromIdx) {
+    currentTo = forkOrder[fromIdx + 1] || forkOrder[forkOrder.length - 1];
+  }
+  navigateDiff(null, fromVal, currentTo);
 }
 
 function navigateDiff(spec, from, to) {
