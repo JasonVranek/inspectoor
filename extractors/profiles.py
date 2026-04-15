@@ -308,6 +308,7 @@ BEACON_APIS = SpecProfile(
     name="beacon-apis",
     repo="ethereum/beacon-APIs",
     source_format="openapi",
+    default_branch="master",
     github_raw="https://raw.githubusercontent.com/ethereum/beacon-APIs/{branch}",
     github_web="https://github.com/ethereum/beacon-APIs/blob/{branch}",
     specs_subdir="types",
