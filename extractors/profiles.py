@@ -365,6 +365,7 @@ EXECUTION_SPECS = SpecProfile(
     name="execution-specs",
     repo="ethereum/execution-specs",
     source_format="python",
+    default_branch="forks/amsterdam",
     github_raw="https://raw.githubusercontent.com/ethereum/execution-specs/{branch}",
     github_web="https://github.com/ethereum/execution-specs/blob/{branch}",
     specs_subdir="src/ethereum/forks",
