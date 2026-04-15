@@ -12,6 +12,7 @@
 
 <div class="header">
   <div class="logo" onclick="window.location='index.html'"><img src="logo.svg" alt="" style="height:20px;vertical-align:middle;margin-right:4px"> The <span class="accent">Ethspectoor</span></div>
+  <button class="hamburger" id="hamburger" aria-label="Menu" onclick="document.querySelector('.nav-tabs').classList.toggle('open');this.classList.toggle('open')">☰</button>
   <div class="nav-tabs">
     <button class="nav-tab" onclick="window.location='index.html'">Home</button>
     <button class="nav-tab" onclick="window.location='index.html#/types'">Types</button>
@@ -584,6 +585,15 @@ document.getElementById('forkSelect').addEventListener('change', (e) => onForkCh
 
 // Initial render
 render();
+</script>
+<script>
+// Close hamburger menu on nav click (mobile)
+document.querySelectorAll('.nav-tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelector('.nav-tabs')?.classList.remove('open');
+    document.getElementById('hamburger')?.classList.remove('open');
+  });
+});
 </script>
 </body>
 </html>

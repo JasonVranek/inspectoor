@@ -11,6 +11,7 @@
 <div class="app" id="app">
   <header class="header">
     <div class="logo" onclick="navigate('#/')"><img src="logo.svg" alt="" style="height:20px;vertical-align:middle;margin-right:4px"> The <span class="accent">Ethspectoor</span></div>
+    <button class="hamburger" id="hamburger" aria-label="Menu" onclick="document.querySelector('.nav-tabs').classList.toggle('open');this.classList.toggle('open')">☰</button>
     <div class="nav-tabs" id="nav-tabs">
       <button class="nav-tab" data-route="#/" onclick="navigate('#/')">Home</button>
       <button class="nav-tab" data-route="#/types" onclick="navigate('#/types')">Types</button>

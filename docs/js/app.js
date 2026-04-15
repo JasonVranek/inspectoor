@@ -163,3 +163,12 @@ window.navigateDiff = navigateDiff;
 /* ── Boot ──────────────────────────────────────────────────── */
 
 init();
+
+// Close hamburger menu on nav click (mobile)
+document.querySelectorAll('.nav-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelector('.nav-tabs')?.classList.remove('open');
+    document.getElementById('hamburger')?.classList.remove('open');
+  });
+});
+
