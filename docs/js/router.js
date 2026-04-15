@@ -1,4 +1,5 @@
 import { state } from './state.js';
+import { parseParams } from './url.js';
 import { renderSpecsOverview } from './views/home.js';
 import { renderTypeBrowser } from './views/types.js';
 import { renderEndpointBrowser } from './views/endpoints.js';
@@ -9,16 +10,8 @@ export function navigate(hash) {
   window.location.hash = hash;
 }
 
-export function parseParams(hash) {
-  const q = hash.indexOf('?');
-  if (q < 0) return {};
-  const params = {};
-  hash.substring(q+1).split('&').forEach(p => {
-    const [k,v] = p.split('=');
-    if (k && v) params[decodeURIComponent(k)] = decodeURIComponent(v);
-  });
-  return params;
-}
+// parseParams re-exported from url.js
+export { parseParams };
 
 export function route() {
   const hash = window.location.hash || '#/';

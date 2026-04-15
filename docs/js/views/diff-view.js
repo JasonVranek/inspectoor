@@ -1,10 +1,9 @@
 import { state } from '../state.js';
-import { sortForks, sortForksRaw } from '../forks.js';
-import { getCodeForFork } from '../forks.js';
+import { parseParams } from '../url.js';
+import { sortForks, sortForksRaw, getCodeForFork } from '../forks.js';
 import { esc, safeId, specBadge, kindBadge, forkBadge, typeLink, highlightPython } from '../utils.js';
 import { fuzzyScore, fuzzyHighlight } from '../search.js';
 import { computeLineDiff, renderDiffCodeBlocks } from '../diff.js';
-import { ALL_FORK_ORDER, HIDDEN_FORKS } from '../constants.js';
 
 export function renderDiffView(container, params) {
   const specName = params.spec || Object.keys(state.catalog.specs)[0];
@@ -280,7 +279,7 @@ export function toggleDiffPreview(el, name, toFork, specName, fromFork) {
 
 export function diffUpdateFrom(fromVal) {
   // When "From" changes, constrain "To" and navigate
-  const specName = (window.parseParams ? window.parseParams(window.location.hash) : {}).spec || Object.keys(state.catalog.specs)[0];
+  const specName = parseParams(window.location.hash).spec || Object.keys(state.catalog.specs)[0];
   const specData = state.catalog.specs[specName];
   const forkOrder = sortForks((specData && specData.meta && specData.meta.fork_order) || []);
   const fromIdx = forkOrder.indexOf(fromVal);

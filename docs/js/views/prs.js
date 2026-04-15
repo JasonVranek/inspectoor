@@ -1,6 +1,5 @@
 import { state } from '../state.js';
-import { sortForks } from '../forks.js';
-import { getCodeForFork } from '../forks.js';
+import { sortForks, getCodeForFork } from '../forks.js';
 import { esc, safeId, specBadge, kindBadge, forkBadge, typeLink, githubBtn, codePreview, highlightPython, resolveTypeSpec } from '../utils.js';
 import { fuzzyScore, fuzzyHighlight } from '../search.js';
 import { computeLineDiff, renderDiffCodeBlocks } from '../diff.js';

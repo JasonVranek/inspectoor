@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Inspectoor - Transaction Lifecycle Visualizer</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
-<link rel="stylesheet" href="styles.css">
-<link rel="stylesheet" href="visualizer.css">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/visualizer.css">
 </head>
 <body>
 
@@ -58,7 +58,8 @@
   <div class="detail-actions" id="detailActions"></div>
 </div>
 
-<script>
+<script type="module">
+import { esc } from "./js/utils.js";
 // === SPEC COLORS ===
 const SPEC_COLORS = {
   'execution-apis': '#39d2c0',
@@ -483,7 +484,6 @@ function closeDetail() {
   document.getElementById('detailPanel').classList.remove('open');
 }
 
-function esc(s) { return s.replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // Close panel on Escape
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });

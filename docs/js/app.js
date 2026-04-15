@@ -3,9 +3,8 @@ import { state } from './state.js';
 import { navigate, route, parseParams } from './router.js';
 import { fuzzyScore, filterDiffItems } from './search.js';
 import { closeSkillModal, viewSkill, copySkill } from './views/skill-modal.js';
-import { setTypeFilter, typeFilterBtn } from './views/types.js';
+import { setTypeFilter, typeFilterBtn, switchForkTab, toggleForkDiff } from './views/types.js';
 import { setEpFilter, epFilterBtn, copyCurl, rebuildCurl, buildCurlFromInputs } from './views/endpoints.js';
-import { switchForkTab, toggleForkDiff } from './views/types.js';
 import { togglePRSpecGroup, filterPRSidebar, togglePRPreview, findPRsForType } from './views/prs.js';
 import { toggleDiffPreview, diffUpdateFrom, navigateDiff } from './views/diff-view.js';
 
@@ -139,7 +138,6 @@ document.addEventListener('keydown', (e) => {
 /* ── Window Bindings (for inline onclick handlers) ─────────── */
 
 window.navigate = navigate;
-window.parseParams = parseParams;
 window.route = route;
 window.onSearchInput = onSearchInput;
 window.closeSkillModal = closeSkillModal;

@@ -1,17 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-
-// parseParams is a pure function -- extract the logic here to test without
-// triggering DOM-dependent view imports through router.js
-function parseParams(hash) {
-  const q = hash.indexOf('?');
-  if (q < 0) return {};
-  const params = {};
-  hash.substring(q+1).split('&').forEach(p => {
-    const [k,v] = p.split('=');
-    if (k && v) params[decodeURIComponent(k)] = decodeURIComponent(v);
-  });
-  return params;
-}
+import { parseParams } from "../url.js";
 
 Deno.test("parseParams: extracts key-value pairs from hash", () => {
   const params = parseParams("#/types?spec=consensus-specs&kind=class");
