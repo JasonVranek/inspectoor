@@ -5,6 +5,7 @@ import { renderTypeBrowser } from './views/types.js';
 import { renderEndpointBrowser } from './views/endpoints.js';
 import { renderPRBrowser } from './views/prs.js';
 import { renderDiffView } from './views/diff-view.js';
+import { renderEIPBrowser } from './views/eips.js';
 
 export function navigate(hash) {
   window.location.hash = hash;
@@ -16,7 +17,7 @@ export { parseParams };
 export function route() {
   const hash = window.location.hash || '#/';
   const main = document.getElementById('main-content');
-  const hasDetail = hash.startsWith('#/type/') || hash.startsWith('#/endpoint/') || (hash.startsWith('#/prs') && hash.includes('pr='));
+  const hasDetail = hash.startsWith('#/type/') || hash.startsWith('#/endpoint/') || (hash.startsWith('#/prs') && hash.includes('pr=')) || (hash.startsWith('#/eips') && hash.includes('eip='));
   main.className = 'main' + (hasDetail ? ' show-detail' : '');
 
   // Update nav tabs
@@ -29,24 +30,32 @@ export function route() {
     document.querySelector('[data-route="#/endpoints"]').classList.add('active');
   } else if (hash.startsWith('#/diff')) {
     document.querySelector('[data-route="#/diff"]').classList.add('active');
+  } else if (hash.startsWith('#/eips') || hash.startsWith('#/eip')) {
+    document.querySelector('[data-route="#/eips"]').classList.add('active');
   } else if (hash.startsWith('#/prs')) {
     document.querySelector('[data-route="#/prs"]').classList.add('active');
   }
 
   // Update search placeholder per tab
   const searchInput = document.getElementById('search-input');
-  if (hash.startsWith('#/prs')) {
+  if (hash.startsWith('#/eips')) {
+    searchInput.placeholder = 'Search EIPs by title or number...  (/ to focus, Esc to clear)';
+  } else if (hash.startsWith('#/prs')) {
     searchInput.placeholder = 'Search PRs by title or number...  (/ to focus, Esc to clear)';
   } else {
     searchInput.placeholder = 'Search types, endpoints...  (/ to focus, Esc to clear)';
   }
 
-  // Apply search query from URL params
+  // Sync search query with URL params
   const _params = parseParams(hash);
   if (_params.q) {
     state.searchQuery = decodeURIComponent(_params.q);
     const si = document.getElementById('search-input');
     if (si) si.value = state.searchQuery;
+  } else if (!state.searchQuery) {
+    // Clear input if state was already cleared (e.g. by onSearchInput(''))
+    const si = document.getElementById('search-input');
+    if (si && si.value) si.value = '';
   }
 
   // Parse route
@@ -66,6 +75,8 @@ export function route() {
     renderEndpointBrowser(main, parseParams(hash), null);
   } else if (hash.startsWith('#/diff')) {
     renderDiffView(main, parseParams(hash));
+  } else if (hash.startsWith('#/eips')) {
+    renderEIPBrowser(main, parseParams(hash));
   } else if (hash.startsWith('#/prs')) {
     renderPRBrowser(main, parseParams(hash));
   } else {

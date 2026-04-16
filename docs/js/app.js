@@ -56,6 +56,8 @@ function onSearchInput(val) {
     filterDiffItems(val);
   } else if (hash.startsWith('#/prs')) {
     filterPRSidebar(val);
+  } else if (hash.startsWith('#/eips')) {
+    route();
   } else if (hash.startsWith('#/types') || hash.startsWith('#/endpoints')) {
     route();
   } else if (val.length > 0) {

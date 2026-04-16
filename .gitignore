@@ -5,3 +5,5 @@ __pycache__/
 .DS_Store
 .enzyme/
 CLAUDE.md
+docs/plans/
+PLAN.md

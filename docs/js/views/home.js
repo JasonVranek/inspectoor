@@ -25,6 +25,10 @@ export function renderSpecsOverview(container) {
   html += '<div class="overview-stat"><div class="val">' + totalEps + '</div><div class="label">Endpoints</div></div>';
   html += '<div class="overview-stat"><div class="val">' + totalConst + '</div><div class="label">Constants</div></div>';
   html += '<div class="overview-stat"><div class="val">' + totalAliases + '</div><div class="label">Type Aliases</div></div>';
+  const eipCount = Object.keys(state.catalog.eip_index || {}).length;
+  if (eipCount > 0) {
+    html += '<div class="overview-stat" style="cursor:pointer" onclick="navigate(\'#/eips\')"><div class="val">' + eipCount + '</div><div class="label">EIPs</div></div>';
+  }
   html += '</div>';
 
   const SPEC_DESC = {

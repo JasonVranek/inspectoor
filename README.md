@@ -24,6 +24,11 @@ open `docs/index.html` locally. No build step, no dependencies.
 - **Diff** -- compare what changed between any two forks per spec. Inline
   side-by-side code diff with LCS-based line highlighting (green for added, red
   for removed, aligned gutters).
+- **EIPs** -- browse every EIP referenced in the specs, grouped by fork. See
+  which types and functions each EIP touches, how many specs it spans, and
+  expand any item inline to view the unified diff. Status badges only appear
+  for EIPs targeting forks still in development. Metadata (title, authors,
+  status, category) is extracted from the ethereum/EIPs repo during build.
 - **PRs** -- browse indexed open pull requests against spec repos. Each PR shows
   which types it adds, modifies, or removes with inline diff previews against
   mainline.
@@ -33,6 +38,26 @@ open `docs/index.html` locally. No build step, no dependencies.
   P2P bid gossip, payload revelation, and PTC voting.
 - **About** (`about.html`) -- overview of the project, tools, and setup for
   first-time visitors.
+
+### EIP Index
+
+The EIPs tab maps every EIP referenced in spec code annotations to the concrete
+types and functions it touches. All data is deterministic -- extracted from
+`[New in Fork:EIPXXXX]` and `[Modified in Fork:EIPXXXX]` comments that spec
+authors embed in the source. During build, `build.py` clones the `ethereum/EIPs`
+repo and enriches each entry with title, authors, status, and category from the
+EIP markdown frontmatter.
+
+For each EIP you can see:
+
+- Which fork it targets and whether it is still in draft
+- Every type and function it adds or modifies, grouped by spec
+- Inline unified diffs (expand any item to see the code change in place)
+- A link to the full definition in the Types view
+
+The sidebar groups EIPs by fork, so you can quickly see the full scope of an
+upgrade. Item counts give an at-a-glance measure of complexity (e.g. EIP-7732
+touches 45 items across consensus-specs).
 
 ### PR Viewer
 
@@ -151,16 +176,16 @@ Types that appear in multiple specs are merged with canonical-source attribution
 between what agents see and what the UI shows.
 
 ```
-repos/ --> build.py --> indexes/ (per-spec, intermediate)
-                            |
-                        link.py --> _cross_refs.json
-                            |
-                    build_catalog.py --> catalog.json (canonical)
-                            |                  |
-                    pr_index.py (overlays)      |
-                                        +------+------+
-                                        |             |
-                                  server.py (MCP)  docs/ (UI)
+repos/specs/ --> build.py --> indexes/ (per-spec)
+                    |             |
+            ethereum/EIPs     link.py --> _cross_refs.json
+            (title/author)        |
+                          build_catalog.py --> catalog.json
+                            + eip_index       + eip_index
+                            + PR overlays          |
+                                            +------+------+
+                                            |             |
+                                      server.py (MCP)  docs/ (UI)
 ```
 
 ## PR Shadow Indexes
@@ -321,18 +346,21 @@ python3 build_catalog.py --indexes-dir ./indexes --output docs/catalog.json
 │   │   ├── forks.js          # fork sorting, code-for-fork resolution
 │   │   ├── search.js         # fuzzy scoring and highlighting
 │   │   ├── diff.js           # LCS-based line diff engine
+│   │   ├── eip-utils.js      # EIP data helpers (group by fork/spec, fork ordering)
 │   │   ├── router.js         # hash-based routing and navigation
 │   │   ├── url.js            # URL parameter parsing
 │   │   └── views/
 │   │       ├── home.js       # specs overview + setup/MCP/skill sections
 │   │       ├── types.js      # type browser (three-panel, filters, detail)
 │   │       ├── endpoints.js  # endpoint browser
+│   │       ├── eips.js       # EIP browser with inline diffs per item
 │   │       ├── prs.js        # PR browser with inline diffs
 │   │       ├── diff-view.js  # fork-to-fork diff comparison
 │   │       └── skill-modal.js # SKILL.md viewer/copy modal
 │   └── js/__tests__/
 │       ├── constants.test.js
 │       ├── diff.test.js
+│       ├── eips.test.js
 │       ├── forks.test.js
 │       ├── router.test.js
 │       ├── search.test.js

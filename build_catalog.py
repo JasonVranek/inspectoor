@@ -9,6 +9,8 @@ code across forks (only stores code when it changes between forks).
 
 import argparse
 import json
+import os
+import re
 import sys
 from pathlib import Path
 
@@ -113,7 +115,158 @@ def resolve_canonical_spec(type_map, name, repo_to_spec):
     return None
 
 
-def build_catalog(indexes_dir, output_path, include_prs=False):
+def parse_eip_frontmatter(eips_dir, eip_number):
+    """Parse YAML frontmatter from an EIP markdown file."""
+    eip_path = os.path.join(eips_dir, "EIPS", f"eip-{eip_number}.md")
+    if not os.path.isfile(eip_path):
+        return None
+    with open(eip_path) as f:
+        text = f.read()
+    if not text.startswith("---"):
+        return None
+    try:
+        end = text.index("---", 3)
+    except ValueError:
+        return None
+    meta = {}
+    for line in text[3:end].strip().split("\n"):
+        if ":" in line:
+            key, _, val = line.partition(":")
+            meta[key.strip()] = val.strip()
+    return meta
+
+
+def build_eip_index(items, fork_orders, eips_dir=None):
+    """Extract EIP references from item code annotations and build an index.
+
+    Scans all items for [New in Fork:EIPXXXX] and [Modified in Fork:EIPXXXX]
+    patterns in code strings. Groups by EIP number. Optionally enriches with
+    metadata from the ethereum/EIPs repo.
+
+    Args:
+        items: catalog items dict (name -> item with forks)
+        fork_orders: dict of spec_name -> fork_order list
+        eips_dir: path to cloned ethereum/EIPs repo (optional)
+
+    Returns:
+        dict keyed by EIP number string (e.g. "7549")
+    """
+    # Matches both "[New in Electra:EIP7549]" and "[New in EIP7928]" (no fork prefix)
+    # Also handles multi-EIP: "[New in Electra:EIP7002:EIP7251]"
+    pattern = re.compile(r"\[(New|Modified) in ([^\]]+)\]")
+    eip_pattern = re.compile(r"EIP(\d+)")
+    # Collect all annotations
+    # key: (eip_num, item_name, spec, change_type) to dedup
+    annotations = {}
+    for item_name, item in items.items():
+        spec = item.get("spec", "")
+        for fork_name, fork_data in item.get("forks", {}).items():
+            code = fork_data.get("code", "")
+            if not code:
+                continue
+            for match in pattern.finditer(code):
+                change_type = match.group(1).lower()  # "new" or "modified"
+                inner = match.group(2)                 # e.g. "Electra:EIP7002:EIP7251" or "EIP7928"
+                parts = inner.split(":")
+                # Determine fork: first part if it's not an EIP ref, else use fork_name
+                if parts[0].startswith("EIP"):
+                    anno_fork = fork_name  # no named fork, use the fork key
+                else:
+                    anno_fork = parts[0].lower()
+                # Extract all EIP numbers
+                for eip_match in eip_pattern.finditer(inner):
+                    eip_num = eip_match.group(1)
+                    key = (eip_num, item_name, spec, change_type)
+                    if key not in annotations:
+                        annotations[key] = {
+                            "name": item_name,
+                            "kind": item.get("kind", ""),
+                            "spec": spec,
+                            "change": change_type,
+                            "fork": anno_fork,
+                        }
+
+    # Group by EIP
+    from collections import defaultdict
+    eip_groups = defaultdict(list)
+    for key, anno in annotations.items():
+        eip_groups[key[0]].append(anno)
+
+    # Build the index
+    # Determine fork ordering for finding "earliest fork"
+    all_fork_order = []
+    for fo in fork_orders.values():
+        for f in fo:
+            if f not in all_fork_order:
+                all_fork_order.append(f)
+
+    eip_index = {}
+    for eip_num, annos in sorted(eip_groups.items(), key=lambda x: int(x[0])):
+        # Find earliest fork
+        forks_seen = set(a["fork"] for a in annos)
+        earliest = None
+        for f in all_fork_order:
+            if f in forks_seen:
+                earliest = f
+                break
+        if earliest is None:
+            earliest = sorted(forks_seen)[0]
+
+        # Dedup items and build summary
+        items_list = []
+        seen = set()
+        for a in annos:
+            item_key = (a["name"], a["spec"], a["change"])
+            if item_key not in seen:
+                seen.add(item_key)
+                items_list.append({
+                    "name": a["name"],
+                    "kind": a["kind"],
+                    "spec": a["spec"],
+                    "change": a["change"],
+                })
+
+        # Sort: types first, then functions, alphabetical within
+        kind_order = {"class": 0, "def": 1}
+        items_list.sort(key=lambda x: (kind_order.get(x["kind"], 2), x["name"]))
+
+        new_count = sum(1 for i in items_list if i["change"] == "new")
+        mod_count = sum(1 for i in items_list if i["change"] == "modified")
+        specs_touched = sorted(set(i["spec"] for i in items_list))
+
+        entry = {
+            "number": int(eip_num),
+            "fork": earliest,
+            "items": items_list,
+            "summary": {
+                "new": new_count,
+                "modified": mod_count,
+                "total": len(items_list),
+                "specs": specs_touched,
+            },
+        }
+
+        # Enrich with EIPs repo metadata
+        if eips_dir:
+            meta = parse_eip_frontmatter(eips_dir, eip_num)
+            if meta:
+                entry["title"] = meta.get("title", "")
+                entry["authors"] = meta.get("author", "")
+                entry["status"] = meta.get("status", "")
+                entry["category"] = meta.get("category", "")
+                entry["created"] = meta.get("created", "")
+                requires = meta.get("requires", "")
+                if requires:
+                    entry["requires"] = requires
+
+        entry["url"] = f"https://eips.ethereum.org/EIPS/eip-{eip_num}"
+
+        eip_index[eip_num] = entry
+
+    return eip_index
+
+
+def build_catalog(indexes_dir, output_path, include_prs=False, eips_dir=None):
     indexes_dir = Path(indexes_dir)
     catalog = {
         "_meta": {"generator": "build_catalog.py", "specs": {}},
@@ -240,6 +393,15 @@ def build_catalog(indexes_dir, output_path, include_prs=False):
 
         catalog["items"][name] = unified
 
+    # Build EIP index from code annotations
+    fork_orders = {}
+    for spec_name, data in all_spec_data.items():
+        fork_orders[spec_name] = data.get("_meta", {}).get("fork_order", [])
+    eip_index = build_eip_index(catalog["items"], fork_orders, eips_dir=eips_dir)
+    if eip_index:
+        catalog["eip_index"] = eip_index
+        print(f"EIP index: {len(eip_index)} EIPs referenced in specs", file=sys.stderr)
+
     # Update spec metadata with item counts
     for spec_name in catalog["specs"]:
         items_in_spec = sum(1 for item in catalog["items"].values() if spec_name in item["specs"])
@@ -295,5 +457,7 @@ if __name__ == "__main__":
     parser.add_argument("--output", default="docs/catalog.json")
     parser.add_argument("--include-prs", action="store_true",
                         help="Include PR shadow overlays in catalog")
+    parser.add_argument("--eips-dir", default=None,
+                        help="Path to cloned ethereum/EIPs repo for metadata")
     args = parser.parse_args()
-    build_catalog(args.indexes_dir, args.output, include_prs=args.include_prs)
+    build_catalog(args.indexes_dir, args.output, include_prs=args.include_prs, eips_dir=args.eips_dir)

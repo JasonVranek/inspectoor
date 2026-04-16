@@ -845,3 +845,66 @@ a.type-link.syn-type:hover, a.type-link.syn-func:hover { text-decoration-style: 
 .fork-diff-toggle.active { background: rgba(88,166,255,0.1); border-color: var(--accent); color: var(--accent); }
 .diff-word-added { background: rgba(63,185,80,0.25); border-radius: 2px; padding: 0 1px; }
 .diff-word-removed { background: rgba(248,81,73,0.25); border-radius: 2px; padding: 0 1px; text-decoration: line-through; }
+
+/* === EIP-specific styles === */
+
+/* Status badges -- only shown for non-deployed forks */
+.eip-status { font-size: 0.7em; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.03em; }
+.eip-status.draft { background: #3a3a1a; color: #facc15; }
+.eip-status.review { background: #1a2a3a; color: #60a5fa; }
+.eip-status.stagnant { background: #2a2a2a; color: #888; }
+.eip-status.withdrawn { background: #3a1a1a; color: #f87171; }
+.eip-status.last-call { background: #2a1a3a; color: #c084fc; }
+
+/* Fork group headers in list */
+.fork-group-header {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--text-dim); padding: 14px 16px 4px;
+}
+
+/* Detail: metadata row */
+.eip-meta { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0 0; color: var(--text-muted); font-size: 0.85em; }
+.eip-meta a { color: var(--accent); }
+
+/* Detail: summary bar */
+.eip-summary-bar {
+  display: flex; gap: 24px; flex-wrap: wrap;
+  margin: 16px 20px; padding: 12px 16px;
+  background: var(--surface); border-radius: 4px; border: 1px solid var(--border);
+}
+.eip-summary-stat { color: var(--text-muted); font-size: 0.85em; }
+.eip-summary-num { font-size: 1.2em; font-weight: 600; color: var(--text); }
+.eip-summary-num.eip-new { color: #4ade80; }
+.eip-summary-num.eip-mod { color: #fb923c; }
+
+/* Detail: spec sections */
+.eip-spec-section { margin: 16px 0; }
+.eip-spec-section h4 {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--text-dim); margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border);
+}
+
+/* Detail: item rows */
+.eip-item-row {
+  padding: 5px 8px; cursor: pointer; border-radius: 3px;
+  font-family: var(--font-mono); font-size: 13px; color: var(--text);
+}
+.eip-item-row:hover { background: var(--surface-2); }
+.eip-item-row .eip-new { color: #4ade80; font-weight: 600; margin-right: 4px; }
+.eip-item-row .eip-mod { color: #fb923c; font-weight: 600; margin-right: 4px; }
+.eip-kind-badge {
+  font-size: 10px; padding: 1px 4px; border-radius: 2px;
+  background: var(--surface-2); color: var(--text-muted); margin-right: 4px;
+  font-family: var(--font-mono); vertical-align: 1px;
+}
+
+/* EIP item expand/collapse */
+.eip-expand-hint {
+  float: right; font-size: 10px; color: var(--text-dim);
+  transition: transform 0.15s;
+}
+.eip-item-name { cursor: pointer; }
+.eip-diff-container {
+  margin: 4px 0 12px 20px; border-left: 2px solid var(--border);
+  padding-left: 12px;
+}

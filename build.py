@@ -70,6 +70,33 @@ def ensure_repo(profile_name: str, repos_dir: str = "./repos/specs") -> tuple[st
     return repo_dir, branch
 
 
+def ensure_eips_repo(repos_dir: str = "./repos/specs") -> str:
+    """Clone or update ethereum/EIPs repo for metadata. Returns repo_dir."""
+    repo_dir = os.path.join(repos_dir, "EIPs")
+    if os.path.isdir(os.path.join(repo_dir, ".git")):
+        print("  Updating EIPs repo...", file=sys.stderr)
+        try:
+            subprocess.run(
+                ["git", "fetch", "origin"],
+                cwd=repo_dir, capture_output=True, check=True
+            )
+            subprocess.run(
+                ["git", "reset", "--hard", "origin/master"],
+                cwd=repo_dir, capture_output=True, check=True
+            )
+        except subprocess.CalledProcessError:
+            print("  Warning: EIPs repo update failed, using existing", file=sys.stderr)
+    else:
+        print("  Cloning ethereum/EIPs...", file=sys.stderr)
+        os.makedirs(repos_dir, exist_ok=True)
+        subprocess.run(
+            ["git", "clone", "--depth", "1",
+             "https://github.com/ethereum/EIPs.git", repo_dir],
+            check=True
+        )
+    return repo_dir
+
+
 def build(profile_name: str, repo_dir: str, branch: str = "main",
           output_dir: str = "./indexes", skip_enrich: bool = False) -> str:
 
@@ -275,6 +302,9 @@ def build_all(repos_dir: str = "./repos/specs", output_dir: str = "./indexes",
             skip_enrich=skip_enrich,
         )
 
+    # Step 1b: Clone/update EIPs repo for metadata
+    eips_repo_dir = ensure_eips_repo(repos_dir)
+
     # Step 2: Cross-reference linking
     print("\n" + "=" * 60, file=sys.stderr)
     print("Cross-reference linking...", file=sys.stderr)
@@ -321,6 +351,8 @@ def build_all(repos_dir: str = "./repos/specs", output_dir: str = "./indexes",
     ]
     if include_prs:
         catalog_args.append("--include-prs")
+    if os.path.isdir(os.path.join(repos_dir, "EIPs")):
+        catalog_args.extend(["--eips-dir", os.path.join(repos_dir, "EIPs")])
     subprocess.run(catalog_args, check=True)
 
     print("\n" + "=" * 60, file=sys.stderr)
