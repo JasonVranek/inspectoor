@@ -172,7 +172,22 @@ export function renderTypeDetailContent(selectedSpec, name, preferredFork = null
   // GitHub + EIPs row
   const latestData = item.forks[latestFork] || {};
   html += '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">';
-  html += githubBtn(latestData.github_url, 'source-btn');
+  // Show source button(s): one per spec when merged, single button otherwise
+  if (item.sources && item.sources.length > 1) {
+    // Deduplicate by spec — show one button per spec using the latest fork's URL
+    const bySpec = {};
+    item.sources.forEach(src => {
+      if (!bySpec[src.spec] || ALL_FORK_ORDER.indexOf(src.fork) > ALL_FORK_ORDER.indexOf(bySpec[src.spec].fork)) {
+        bySpec[src.spec] = src;
+      }
+    });
+    Object.values(bySpec).forEach(src => {
+      const label = src.spec.replace(/-/g, ' ');
+      html += '<a class="btn" href="' + esc(src.url) + '" target="_blank" rel="noopener" title="' + esc(src.spec) + ' (' + esc(src.fork) + ')">↗ ' + esc(label) + '</a>';
+    });
+  } else {
+    html += githubBtn(latestData.github_url, 'source-btn');
+  }
   if (latestData.eips && latestData.eips.length) {
     latestData.eips.forEach(eip => {
       const num = String(eip).replace(/^eip-?/i, '');

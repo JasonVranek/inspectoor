@@ -385,6 +385,17 @@ def build_catalog(indexes_dir, output_path, include_prs=False, eips_dir=None):
             sec_forks = build_item_forks(sec_raw, sec_fo)
             merge_items(primary_raw, primary_forks, sec_raw, sec_forks)
 
+        # Collect all source URLs from all specs (deduped by URL)
+        sources = []
+        seen_urls = set()
+        for s in specs_list:
+            raw = spec_entries[s]["raw"]
+            for fork, fd in raw.get("forks", {}).items():
+                url = fd.get("github_url", "")
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    sources.append({"spec": s, "fork": fork, "url": url})
+
         unified = {
             "name": name,
             "kind": primary_raw.get("kind", ""),
@@ -393,6 +404,7 @@ def build_catalog(indexes_dir, output_path, include_prs=False, eips_dir=None):
             "spec": primary_spec,
             "specs": sorted(specs_list),
             "forks": primary_forks,
+            "sources": sources,
         }
         if primary_raw.get("modified_in"):
             unified["modified_in"] = primary_raw["modified_in"]
