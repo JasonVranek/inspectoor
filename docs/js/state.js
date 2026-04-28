@@ -4,6 +4,6 @@ export const state = {
   allItems: [],
   allEndpoints: [],
   searchQuery: '',
-  typeFilters: { spec: '', kind: '', domain: '' },
+  typeFilters: { spec: '', kind: '', domain: '', fork: '' },
   epFilters: { spec: '', method: '', domain: '', group: '' },
 };

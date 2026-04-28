@@ -41,3 +41,38 @@ export function getCodeForFork(item, fork) {
   }
   return '';
 }
+
+// Check if an item was introduced or modified in the given fork (not carry-forward).
+// This is the intended behavior for the Fork filter: "what changed in this fork?"
+export function itemExistsInFork(item, fork) {
+  if (!item.forks) return false;
+  const fd = item.forks[fork];
+  if (!fd) return false;
+  // Only match if this fork actually has new or modified content
+  return !!(fd.is_new || fd.is_modified);
+}
+
+// Check if an item has any definition at or before the given fork (carry-forward aware).
+// Used for determining whether a type is visible in a detail view at a given fork.
+export function itemHasContentAtFork(item, fork) {
+  if (!item.forks) return false;
+
+  // Direct hit
+  if (item.forks[fork]) {
+    const fd = item.forks[fork];
+    if (fd.code || fd.fields || fd.is_new || fd.is_modified) return true;
+  }
+
+  // Carry-forward: check if any earlier fork in ALL_FORK_ORDER has content
+  const targetIdx = ALL_FORK_ORDER.indexOf(fork);
+  if (targetIdx === -1) return false;
+
+  for (const f of Object.keys(item.forks)) {
+    const idx = ALL_FORK_ORDER.indexOf(f);
+    if (idx !== -1 && idx <= targetIdx) {
+      const fd = item.forks[f];
+      if (fd.code || fd.fields || fd.is_new || fd.is_modified) return true;
+    }
+  }
+  return false;
+}

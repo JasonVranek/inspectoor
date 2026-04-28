@@ -1,10 +1,10 @@
 import { state } from '../state.js';
-import { sortForks, sortForksRaw, getCodeForFork } from '../forks.js';
+import { sortForks, sortForksRaw, getCodeForFork, itemExistsInFork } from '../forks.js';
 import { esc, safeId, codePreview, kindBadge, specBadge, forkBadge, typeLink, githubBtn, resolveTypeSpec, highlightPython } from '../utils.js';
 import { fuzzyScore, fuzzyHighlight } from '../search.js';
 import { computeLineDiff, renderDiffCodeBlocks } from '../diff.js';
 import { findPRsForType } from './prs.js';
-import { SPEC_COLORS, KIND_BADGES } from '../constants.js';
+import { ALL_FORK_ORDER, HIDDEN_FORKS, SPEC_COLORS, KIND_BADGES } from '../constants.js';
 
 export function setTypeFilter(key, value) {
   state.typeFilters[key] = value;
@@ -18,17 +18,27 @@ export function renderTypeBrowser(container, params, selected) {
     if (params.spec) state.typeFilters.spec = params.spec;
     if (params.kind) state.typeFilters.kind = params.kind;
     if (params.domain) state.typeFilters.domain = params.domain;
+    if (params.fork) state.typeFilters.fork = params.fork;
   }
 
-  const { spec: filterSpec, kind: filterKind, domain: filterDomain } = state.typeFilters;
+  const { spec: filterSpec, kind: filterKind, domain: filterDomain, fork: filterFork } = state.typeFilters;
 
   // Collect filter facets
-  const specs = {}, kinds = {}, domains = {};
+  const specs = {}, kinds = {}, domains = {}, forkCounts = {};
   state.allItems.forEach(item => {
     // Count in each spec this item belongs to
     if (item.specs) item.specs.forEach(s => { specs[s] = (specs[s]||0) + 1; });
     if (item.kind) kinds[item.kind] = (kinds[item.kind]||0) + 1;
     if (item.domain) domains[item.domain] = (domains[item.domain]||0) + 1;
+    // Count forks where this item was actually introduced or modified
+    if (item.forks) {
+      for (const [f, fd] of Object.entries(item.forks)) {
+        if (HIDDEN_FORKS.has(f)) continue;
+        if (fd.is_new || fd.is_modified) {
+          forkCounts[f] = (forkCounts[f] || 0) + 1;
+        }
+      }
+    }
   });
 
   // Filter
@@ -36,6 +46,7 @@ export function renderTypeBrowser(container, params, selected) {
     if (filterSpec && (!item.specs || !item.specs.includes(filterSpec))) return false;
     if (filterKind && item.kind !== filterKind) return false;
     if (filterDomain && item.domain !== filterDomain) return false;
+    if (filterFork && !itemExistsInFork(item, filterFork)) return false;
     if (state.searchQuery && fuzzyScore(item.name, state.searchQuery) === null) return false;
     return true;
   });
@@ -58,6 +69,12 @@ export function renderTypeBrowser(container, params, selected) {
   sideHtml += typeFilterBtn('kind', '', 'All kinds', '', filterKind === '');
   for (const [k, c] of Object.entries(kinds).sort((a,b)=>b[1]-a[1])) {
     sideHtml += typeFilterBtn('kind', k, k, c, filterKind === k);
+  }
+  sideHtml += '</div>';
+  sideHtml += '<div class="sidebar-section"><h3>Fork</h3>';
+  sideHtml += typeFilterBtn('fork', '', 'All forks', state.allItems.length, filterFork === '');
+  for (const f of sortForks(Object.keys(forkCounts))) {
+    sideHtml += typeFilterBtn('fork', f, f, forkCounts[f], filterFork === f);
   }
   sideHtml += '</div>';
   sideHtml += '<div class="sidebar-section"><h3>Domain</h3>';
@@ -87,7 +104,7 @@ export function renderTypeBrowser(container, params, selected) {
 
   // Detail
   let detailHtml = selected
-    ? renderTypeDetailContent(null, selected.name)
+    ? renderTypeDetailContent(null, selected.name, filterFork || null)
     : '<div class="empty-state"><div class="icon">📋</div><div>Select a type to view details</div></div>';
 
   container.innerHTML =
@@ -112,7 +129,7 @@ export function typeFilterBtn(key, value, label, count, active) {
 
 /* VIEW 3: TYPE DETAIL */
 
-export function renderTypeDetailContent(selectedSpec, name) {
+export function renderTypeDetailContent(selectedSpec, name, preferredFork = null) {
   // Items are unified in state.catalog.items (already merged across specs)
   const item = state.catalog.items[name];
   if (!item) {
@@ -207,6 +224,26 @@ export function renderTypeDetailContent(selectedSpec, name) {
 
   if (hasCode && codeForkNames.length > 0) {
     const tabId = 'fork-tabs-' + safeId(name);
+
+    // Determine which fork tab to activate by default
+    let activeFork = codeForkNames[codeForkNames.length - 1];
+    if (preferredFork) {
+      if (codeForkNames.includes(preferredFork)) {
+        activeFork = preferredFork;
+      } else {
+        const prefIdx = ALL_FORK_ORDER.indexOf(preferredFork);
+        if (prefIdx !== -1) {
+          for (let i = codeForkNames.length - 1; i >= 0; i--) {
+            const fIdx = ALL_FORK_ORDER.indexOf(codeForkNames[i]);
+            if (fIdx !== -1 && fIdx <= prefIdx) {
+              activeFork = codeForkNames[i];
+              break;
+            }
+          }
+        }
+      }
+    }
+
     html += '<div class="detail-section"><h3>Definition' +
       '' +
       '</h3>';
@@ -218,16 +255,16 @@ export function renderTypeDetailContent(selectedSpec, name) {
       const fd = item.forks[f];
       if (fd.is_new) cls = 'new';
       else if (fd.is_modified) cls = 'modified';
-      const isLast = i === codeForkNames.length - 1;
-      html += '<button class="badge-fork ' + cls + '" style="cursor:pointer;' + (isLast ? 'border-color:var(--accent);color:var(--accent)' : '') + '" onclick="switchForkTab(\'' + esc(tabId) + '\', \'' + esc(f) + '\', this)">' + esc(f) + '</button>';
+      const isActive = f === activeFork;
+      html += '<button class="badge-fork ' + cls + '" style="cursor:pointer;' + (isActive ? 'border-color:var(--accent);color:var(--accent)' : '') + '" onclick="switchForkTab(\'' + esc(tabId) + '\', \'' + esc(f) + '\', this)">' + esc(f) + '</button>';
     });
     html += '</div>';
 
-    // Code blocks (one per fork, latest visible initially)
+    // Code blocks (one per fork, active fork visible initially)
     codeForkNames.forEach((f, i) => {
       const code = getCodeForFork(item, f);
       const fd = item.forks[f];
-      const isLast = i === codeForkNames.length - 1;
+      const isActive = f === activeFork;
       const forkGithubUrl = (item.forks[f] && item.forks[f].github_url) || '';
       // Find previous fork's code for diffing
       const prevFork = i > 0 ? codeForkNames[i - 1] : null;
@@ -237,7 +274,7 @@ export function renderTypeDetailContent(selectedSpec, name) {
       const codeViewId = 'code-view-' + safeId(name) + '-' + safeId(f);
       const diffViewId = 'diff-view-' + safeId(name) + '-' + safeId(f);
 
-      html += '<div class="fork-code-block" data-tabs="' + esc(tabId) + '" data-fork="' + esc(f) + '" data-github-url="' + esc(forkGithubUrl) + '" style="' + (isLast ? '' : 'display:none') + '">';
+      html += '<div class="fork-code-block" data-tabs="' + esc(tabId) + '" data-fork="' + esc(f) + '" data-github-url="' + esc(forkGithubUrl) + '" style="' + (isActive ? '' : 'display:none') + '">';
 
       if (hasDiffable) {
         html += '<div style="display:flex;justify-content:flex-end;margin-bottom:6px">';
