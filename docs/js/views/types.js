@@ -181,6 +181,20 @@ export function renderTypeDetailContent(selectedSpec, name, preferredFork = null
   }
   html += '</div>';
 
+  // Constant / Alias rendering (no fork tabs needed)
+  if (item.kind === 'constant') {
+    html += '<div class="detail-section"><h3>Value</h3>';
+    html += '<pre class="code-block">' + esc(latestData.value || '') + '</pre>';
+    if (latestData.type) {
+      html += '<div style="margin-top:8px;color:var(--text-muted);font-size:12px">Type: <code>' + esc(latestData.type) + '</code></div>';
+    }
+    html += '</div>';
+  } else if (item.kind === 'alias') {
+    html += '<div class="detail-section"><h3>Type Alias</h3>';
+    html += '<div style="font-size:16px;font-family:var(--font-mono);margin-bottom:8px">' + esc(item.name) + ' = ' + esc(latestData.ssz_equivalent || 'unknown') + '</div>';
+    html += '</div>';
+  }
+
   // Fork code tabs (shown first -- the main content) -- use item (may be from a different spec if this spec has no code)
   // Build fork tab list: only show forks where something actually changed
   function fieldsSignature(fields) {

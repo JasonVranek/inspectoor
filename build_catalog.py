@@ -19,14 +19,20 @@ def normalize_constant(name, value):
     entry = value[-1] if isinstance(value, list) and value else value if isinstance(value, dict) else None
     if not entry:
         return None
-    return {k: entry.get(k, "") for k in ["name", "value", "type", "description", "section", "category", "fork", "github_url"]}
+    out = {k: entry.get(k, "") for k in ["name", "value", "type", "description", "section", "category", "github_url"]}
+    out["introduced"] = entry.get("introduced", "")
+    out["present_in_forks"] = entry.get("present_in_forks", [])
+    return out
 
 
 def normalize_type_alias(name, value):
     entry = value[-1] if isinstance(value, list) and value else value if isinstance(value, dict) else None
     if not entry:
         return None
-    return {k: entry.get(k, "") for k in ["name", "ssz_equivalent", "description", "fork", "github_url"]}
+    out = {k: entry.get(k, "") for k in ["name", "ssz_equivalent", "description", "github_url"]}
+    out["introduced"] = entry.get("introduced", "")
+    out["present_in_forks"] = entry.get("present_in_forks", [])
+    return out
 
 
 def build_item_forks(item, fork_order):
@@ -392,6 +398,58 @@ def build_catalog(indexes_dir, output_path, include_prs=False, eips_dir=None):
             unified["modified_in"] = primary_raw["modified_in"]
 
         catalog["items"][name] = unified
+
+    # Third pass: merge constants and type_aliases into unified items
+    for spec_name, spec in catalog["specs"].items():
+        for name, c in spec.get("constants", {}).items():
+            introduced = c.get("introduced", "")
+            if not introduced:
+                # Fallback: use first fork from present_in_forks if available
+                forks = c.get("present_in_forks", [])
+                introduced = forks[0] if forks else "unversioned"
+            fork_data = {
+                "value": c.get("value", ""),
+                "type": c.get("type", ""),
+                "description": c.get("description", ""),
+                "github_url": c.get("github_url", ""),
+                "prose": c.get("description", ""),
+                "is_new": True,
+            }
+            if name in catalog["items"]:
+                # Name collision with an existing item — skip to avoid clobbering
+                continue
+            catalog["items"][name] = {
+                "name": name,
+                "kind": "constant",
+                "domain": c.get("section") or c.get("category") or "",
+                "introduced": introduced,
+                "spec": spec_name,
+                "specs": [spec_name],
+                "forks": {introduced: fork_data},
+            }
+        for name, a in spec.get("type_aliases", {}).items():
+            introduced = a.get("introduced", "")
+            if not introduced:
+                forks = a.get("present_in_forks", [])
+                introduced = forks[0] if forks else "unversioned"
+            fork_data = {
+                "ssz_equivalent": a.get("ssz_equivalent", ""),
+                "description": a.get("description", ""),
+                "github_url": a.get("github_url", ""),
+                "prose": a.get("description", ""),
+                "is_new": True,
+            }
+            if name in catalog["items"]:
+                continue
+            catalog["items"][name] = {
+                "name": name,
+                "kind": "alias",
+                "domain": "",
+                "introduced": introduced,
+                "spec": spec_name,
+                "specs": [spec_name],
+                "forks": {introduced: fork_data},
+            }
 
     # Build EIP index from code annotations
     fork_orders = {}
